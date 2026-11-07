@@ -82,7 +82,7 @@ AgentStream은 서버에서 X-API-Key 인증으로 health 확인 → 세션 생�
 - 버튼은 서버 저장 완료를 기다립니다. 미저장·동시 수정 충돌 시 다운로드하지 않고 안내합니다. 파일은 매번 최신 서버 스냅샷에서 생성하며 **이미 다운로드한 파일 자체가 자동 변경되지는 않습니다**. 고객에게 자동 발송하지 않습니다.
 - 원본 상담·수리 기록은 `/data/Documents/Codex/.runtime/fieldnote/data/records.sqlite3`, 사진·서명은 같은 폴더의 `media/`에 유지합니다. 파일 다운로드는 메모리에서 생성하므로 서버에 오래된 사본을 쌓지 않습니다. 휴대폰에 내려받은 파일은 해당 기기의 다운로드 목록/파일 앱에 저장됩니다.
 - 기본 데모는 화면과 동일한 날짜 이동·배정·부품 기준으로 서버에서도 구성합니다. 실제 입력 기록은 SQLite의 전체 누적 이력을 사용하고, 같은 ID의 저장된 데모 수정본은 기본값보다 우선합니다. `report-demo-smoke.mjs`가 화면/내보내기 일치를 검증합니다.
-- 상담사 AgentStream은 **테스트_**, ID `4723b84d-e559-4d5a-8d0b-7de80e5764f8`로 변경했습니다. 엔지니어 Help ID와 API 키는 유지합니다. 키는 `frontend/dispatch/.env`에만 둡니다.
+- 상담사 AgentStream은 **as 상담사 전용 챗봇_3팀_김보경**, ID `9a6cceca-fe96-4054-864c-802b534e74ba`로 변경했습니다. 엔지니어 Help ID와 API 키는 유지합니다. 키는 `frontend/dispatch/.env`에만 둡니다.
 
 PDF 서버 의존성 (Ubuntu, 기존 runit/8501 유지):
 
