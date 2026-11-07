@@ -24,7 +24,7 @@ let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = 'farmingboy-customers-100-v3';
+const DEMO_SEED_VERSION = 'farmingboy-customers-100-v4';
 const MANAGER_PASSWORD = '1234';
 
 function demoPhoto(label, index, after = false) {
@@ -106,7 +106,7 @@ async function seedFarmingboyDemo() {
   completed.forEach((customer, index) => assigned.set(customer.customer_id, engineers[index % engineers.length]));
   state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null, dispatchCustomers.some(item => item.customer_id === customer.customer_id)));
   state.staff = { counselors: ['상담사 A'], engineers };
-  state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0];
+  state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0]; state.role = 'counselor';
   state.routePlans = {}; state.demoSeedVersion = DEMO_SEED_VERSION;
   persist();
 }
