@@ -11,11 +11,17 @@ document.querySelector('#help-title').textContent = `${engineer} 작업 도움�
 const conversation = { id: `ENGINEER-HELP-${engineer}-${crypto.randomUUID()}`, transcript: [] };
 const engineerEndpoint = new URL('../api/agentstream/engineer-chat', location.href).href;
 const submitButton = form.querySelector('button[type="submit"]');
+const demoChoice = document.querySelector('.demo-choice');
+
+question.addEventListener('focus', () => demoChoice.classList.add('is-open'));
+question.addEventListener('keydown', event => { if (event.key === 'Escape') demoChoice.classList.remove('is-open'); });
+document.addEventListener('pointerdown', event => { if (!event.target.closest('#question, .demo-choice')) demoChoice.classList.remove('is-open'); });
 
 document.querySelector('#help-demo-question').addEventListener('click', () => {
   question.value = '딱딱 소리날 때 뭘 봐야 하더라. 좀 알려줘';
   question.dispatchEvent(new Event('input', { bubbles: true }));
   question.focus();
+  demoChoice.classList.remove('is-open');
 });
 
 function bubble(kind, content) {
