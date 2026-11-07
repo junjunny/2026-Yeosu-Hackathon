@@ -27,6 +27,7 @@ let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
 const DEMO_SEED_VERSION = `farmingboy-customers-100-v7-relative-seoul-date-${seoulDay(new Date())}`;
+const PRE_DEMO_CLEANUP_VERSION = 'remove-existing-hanjunhui-v1';
 const MANAGER_PASSWORD = '1234';
 const DEMO_CHOICES = {
   customerName: ['한준희'],
@@ -167,6 +168,15 @@ async function seedFarmingboyDemo() {
 function persist() {
   try { saveState(state); return true; }
   catch { alert('브라우저 저장 공간이 부족합니다. 사진 크기를 줄여 다시 시도해 주세요.'); return false; }
+}
+function cleanupExistingDemoCustomer() {
+  if(state.preDemoCleanupVersion===PRE_DEMO_CLEANUP_VERSION)return;
+  const removedIds=new Set(state.cases.filter(item=>String(item.customerName||'').replace(/\s/g,'')==='한준희').map(item=>item.id));
+  state.cases=state.cases.filter(item=>!removedIds.has(item.id));
+  if(removedIds.has(state.activeId))state.activeId=null;
+  for(const plan of Object.values(state.routePlans||{}))if(Array.isArray(plan?.stops))plan.stops=plan.stops.filter(stop=>!removedIds.has(stop.caseId));
+  state.preDemoCleanupVersion=PRE_DEMO_CLEANUP_VERSION;
+  persist();
 }
 function formError(form, message, fieldName) {
   let error = form.querySelector('.form-error');
@@ -765,6 +775,7 @@ $('#conversation').addEventListener('submit',async event=>{
 
 async function bootstrap() {
   try {
+    cleanupExistingDemoCustomer();
     await seedFarmingboyDemo();
     if (state.role === 'manager') { state.role = 'counselor'; persist(); }
     render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
