@@ -16,6 +16,7 @@ let priceFileName = '';
 let routeBusy = false;
 let engineerHelpOpen = false;
 let engineerHelpFor = '';
+let mobileCaseListOpen = false;
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const lines = value => escapeHtml(value).replace(/\n/g, '<br>');
@@ -396,6 +397,7 @@ function setEngineerHelp(open) {
   const grid = $('.content-grid');
   panel.hidden = !engineerHelpOpen;
   grid.classList.toggle('help-open', engineerHelpOpen);
+  document.body.classList.toggle('help-active', engineerHelpOpen);
   $('#open-engineer-help').setAttribute('aria-expanded', String(engineerHelpOpen));
   if (!engineerHelpOpen) return;
   const engineer = state.selectedEngineer || '엔지니어';
@@ -430,11 +432,14 @@ function render(scrollPosition = 'bottom') {
   $('#case-list').innerHTML = visibleCases.length ? [...visibleCases].sort((a,b) => String(b.assignedAt || b.receivedAt || b.createdAt).localeCompare(String(a.assignedAt || a.receivedAt || a.createdAt))).map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.receivedAt || c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">${state.role==='engineer'?'담당 현장':'오늘 접수'} · ${escapeHtml(c.status)}</span></button>`).join('') : `<p class="empty-cases">${state.role==='engineer'?'담당 현장 업무가 없습니다.':'오늘 접수된 상담이 없습니다.'}</p>`;
   $('#conversation').innerHTML = state.role==='manager' ? farmingboyManagerSummary()+managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
   $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
+  $('.content-grid').classList.toggle('intake-layout',state.role!=='manager'&&!item);
+  $('#case-list-label').textContent=state.role==='engineer'?'담당 현장':'오늘 접수';
+  syncCaseList();
   $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
   setEngineerHelp(engineerHelpOpen);
   bindSignature();
   if(state.role==='engineer'&&item?.stage==='repair-plan')loadTravelEstimate(item);
-  $('#conversation').scrollTop = scrollPosition === 'top' ? 0 : $('#conversation').scrollHeight;
+  $('#conversation').scrollTop = scrollPosition === 'top' || !item ? 0 : $('#conversation').scrollHeight;
 }
 
 function bindSignature() {
@@ -448,7 +453,7 @@ function bindSignature() {
   const ctx = canvas.getContext('2d');
   ctx.scale(ratio, ratio); ctx.strokeStyle = '#263957'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   let drawing = false;
-  const point = event => { const r = canvas.getBoundingClientRect(); return [event.clientX-r.left, event.clientY-r.top]; };
+  const point = event => { const r = canvas.getBoundingClientRect(); return [(event.clientX-r.left)*width/r.width, (event.clientY-r.top)*150/r.height]; };
   canvas.addEventListener('pointerdown', event => { drawing = true; signatureHasInk = true; canvas.setPointerCapture(event.pointerId); const [x,y]=point(event); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+.1,y+.1); ctx.stroke(); });
   canvas.addEventListener('pointermove', event => { if (!drawing) return; const [x,y]=point(event); ctx.lineTo(x,y); ctx.stroke(); });
   canvas.addEventListener('pointerup', () => { drawing = false; });
@@ -475,14 +480,22 @@ async function imageData(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-$('#new-case').addEventListener('click', () => { state.activeId = null; state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
+function syncCaseList(){
+  const compact=window.matchMedia?.('(max-width: 900px)').matches||false;
+  $('.sidebar').classList.toggle('cases-open',mobileCaseListOpen);
+  $('#case-list-toggle').setAttribute('aria-expanded',String(!compact||mobileCaseListOpen));
+  $('.case-list-toggle-label').textContent=mobileCaseListOpen?'목록 접기':'목록 보기';
+}
+$('#case-list-toggle').addEventListener('click',()=>{mobileCaseListOpen=!mobileCaseListOpen;syncCaseList();});
+window.matchMedia?.('(max-width: 900px)').addEventListener('change',syncCaseList);
+$('#new-case').addEventListener('click', () => { state.activeId = null; state.role = 'counselor'; state.closeFormOpen = false; mobileCaseListOpen=false; persist(); render('top'); window.scrollTo?.({top:0}); });
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; selectEngineerWork(); persist(); render('top'); });
 $('#open-engineer-help').addEventListener('click', () => {
   setEngineerHelp(!engineerHelpOpen);
 });
 $('#close-engineer-help').addEventListener('click', () => setEngineerHelp(false));
-$('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
+$('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; mobileCaseListOpen=false; persist(); render('top'); });
 function closeDemoChoices(except=null){document.querySelectorAll('.demo-choices.is-open').forEach(popup=>{if(popup!==except)popup.classList.remove('is-open');});}
 $('#conversation').addEventListener('focusin', event => {
   const field=event.target.closest('input[name], textarea[name]');if(!field)return;

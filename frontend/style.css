@@ -56,3 +56,162 @@ label,.chat-composer{position:relative}.demo-choices{display:none;position:absol
 .manager-auth-modal{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:#14213d73;backdrop-filter:blur(3px)}.manager-auth-modal[hidden]{display:none}.manager-auth-card{width:min(390px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #dce5f2;border-radius:14px;background:#fff;padding:24px;box-shadow:0 24px 70px #14213d45}.manager-auth-card>span{color:#5574bd;font-size:9px;font-weight:900;letter-spacing:.1em}.manager-auth-card h2{margin:7px 0;font-size:19px}.manager-auth-card>p{margin:0 0 18px;color:#6d7f98;font-size:11px}.manager-auth-card input{font-size:18px!important;letter-spacing:.18em}.manager-auth-card>div{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.manager-auth-error{margin:8px 0 0!important;color:#c33d49!important;font-weight:800}@media(max-width:700px){.manager-auth-modal{align-items:end;padding:10px}.manager-auth-card{width:100%;border-radius:16px;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}.manager-auth-card h2{font-size:20px}.manager-auth-card input{min-height:48px!important;font-size:20px!important}.manager-auth-card>div{display:grid;grid-template-columns:1fr 1fr}.manager-auth-card button{min-height:48px;padding:0 10px}.manager-auth-card .primary-button{order:2}}
 /* Completed demo repair evidence and route explanation. */
 .demo-evidence{margin:20px 0;border:1px solid #dce7ee;border-radius:14px;overflow:hidden;background:#f8fbfd}.demo-evidence-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px}.demo-evidence-heading h3{margin:4px 0;font-size:17px}.demo-evidence-heading small{color:#327267;font-size:10px;letter-spacing:.1em}.demo-evidence-heading>span{font-size:10px;color:#6a7a90}.demo-evidence>img{display:block;width:100%;height:auto}.demo-evidence>p{padding:0 16px 12px;font-size:12px;line-height:1.7}.demo-signature{width:100%;aspect-ratio:4/1;background:#fff url('./assets/demo-repairs/signatures.png') center top/100% 200% no-repeat}.demo-signature.bottom{background-position:center bottom}.optimization-note{margin:12px 0;padding:18px;border:1px solid #cfdff4;background:#f3f8ff;border-radius:12px}.optimization-note h3{margin:0 0 8px;font-size:14px}.optimization-note p,.optimization-note small{font-size:12px;line-height:1.75}.optimization-note small{color:#6d7b92}.manager-history{padding:16px;margin-bottom:18px}.manager-history summary{cursor:pointer;font-weight:700}.location-flags small{color:#697b92}@media(max-width:700px){.demo-evidence-heading{align-items:flex-start;flex-direction:column}.demo-evidence-heading h3{font-size:16px}.optimization-note{padding:14px}.manager-history{padding:12px}.demo-signature{min-height:70px}}
+
+/* Shared alignment and responsive workflow layout. */
+.content-grid > *, .field-conversation, .ops-board > *, .topbar-title { min-width: 0; }
+.stage-form, .completion-card { width: 100%; max-width: 740px; margin: 18px auto 24px; }
+.stage-form > h3, .stage-form > h4 { margin: 0; }
+.content-grid.intake-layout { grid-template-columns: minmax(0, 1fr); max-width: 1120px; }
+.intake-layout .details-panel { display: none; }
+.intake-layout .conversation-panel { max-height: none; }
+.intake-layout .conversation { overflow: visible; padding: 32px clamp(16px, 4vw, 48px); }
+.intake-layout .welcome { max-width: 640px; margin: 0 auto 24px; }
+.intake-layout #start-form { max-width: 640px; margin-inline: auto; padding: 24px; gap: 20px; }
+.intake-layout #start-form > h3 { font-size: 18px; }
+.intake-layout #start-form > .primary-button { align-self: stretch; min-height: 46px; }
+.intake-layout .demo-note { margin-bottom: 0; }
+.staff-picker { flex-shrink: 0; white-space: nowrap; }
+.staff-picker select { width: auto; margin-top: 0; }
+.side-heading { width: 100%; border: 0; background: transparent; text-align: left; cursor: default; }
+.side-heading .case-list-summary { display: flex; align-items: center; gap: 8px; padding: 0; background: none; }
+.side-heading #case-count { padding: 2px 6px; border-radius: 5px; background: #263854; }
+.case-list-toggle-label { display: none; }
+.conversation-meta { min-height: 54px; height: auto; padding-block: 12px; }
+.thread-actions { flex-wrap: wrap; justify-content: flex-end; }
+#thread-id { overflow-wrap: anywhere; }
+.quote-row > :last-child { flex-shrink: 0; white-space: nowrap; }
+.message-head { flex-wrap: wrap; }
+.note-composer input, .note-composer textarea { min-width: 0; flex: 1; }
+.signature-pad { max-width: 100%; }
+.signature-receipt { min-width: 0; }
+.demo-signature { min-height: 0; }
+.help-open .multi-photo-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.price-columns, .form-grid { min-width: 0; }
+input[type=file] { max-width: 100%; min-width: 0; }
+@media (min-width: 901px) {
+  .sidebar { position: sticky; top: 0; height: 100dvh; min-height: 0; }
+  .sidebar .case-list { min-height: 0; overflow-y: auto; }
+  .sidebar .brand, .sidebar .new-case, .sidebar .side-heading, .sidebar-bottom { flex-shrink: 0; }
+  .sidebar-bottom { margin-top: 16px; }
+}
+/* Use the available workspace width instead of a fixed minimum chart width. */
+@media (max-width: 1350px) {
+  .ops-board { grid-template-columns: minmax(0, 1fr); }
+  .workload-panel, .intake-monitor { grid-column: auto; }
+  .topology-panel { overflow-x: auto; }
+  .topology-flow, .topology-legend { min-width: 650px; }
+}
+@media (max-width: 900px) {
+  .app-shell { display: block; }
+  .sidebar { min-height: 0; padding: 12px 16px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .brand { padding: 0; min-width: 0; gap: 8px; }
+  .brand strong { font-size: 16px; }
+  .brand small { font-size: 10px; }
+  .new-case { position: static; min-height: 44px; height: auto; padding: 0 12px; font-size: 12px; text-align: center; }
+  .new-case span { font-size: 18px; }
+  .workspace-label, .sidebar-bottom { display: none; }
+  .side-heading { grid-column: 1 / -1; display: flex; align-items: center; margin: 0; padding: 10px 0; min-height: 44px; cursor: pointer; }
+  .side-heading .case-list-toggle-label { display: inline; background: none; padding: 0; font-size: 11px; }
+  .sidebar .case-list { display: none; grid-column: 1 / -1; min-width: 0; }
+  .sidebar.cases-open .case-list { display: flex; flex-direction: row; overflow-x: auto; gap: 8px; padding-bottom: 12px; }
+  .case-item { flex: 0 0 210px; min-width: 0; max-width: none; }
+  .case-item-top strong { font-size: 13px; }
+  .case-item-top small, .case-item-status { font-size: 11px; }
+  .case-item-symptom { font-size: 12px; }
+  .topbar { min-height: 0; height: auto; padding: 16px; flex-wrap: wrap; }
+  .topbar-actions { max-width: none; }
+  .content-grid { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .details-panel { display: none; }
+  .conversation-panel { max-height: none; min-height: 0; }
+  .conversation { overflow: visible; }
+  .intake-layout .conversation { padding: 24px 16px; }
+}
+@media (max-width: 1200px) {
+  .content-grid.help-open { grid-template-columns: minmax(0, 1fr); }
+  .content-grid.help-open .conversation-panel { display: flex; max-height: none; }
+  .help-active { overflow: hidden; }
+  .help-open .engineer-help-panel { position: fixed; z-index: 60; inset: 8px; height: calc(100dvh - 16px); border-radius: 12px; box-shadow: 0 0 0 100vmax #14213d70; }
+  .engineer-help-panel > header { flex-shrink: 0; }
+  .engineer-help-panel > header button { min-height: 44px; font-size: 12px; white-space: normal; }
+  .engineer-help-panel iframe { flex: 1; }
+}
+@media (max-width: 700px) {
+  .topbar-title { margin-bottom: 12px; }
+  .topbar-actions { gap: 12px; width: 100%; }
+  .role-switch { width: 100%; }
+  .role-switch button { min-height: 44px; font-size: 13px; }
+  .staff-picker { width: 100%; font-size: 13px; }
+  .staff-picker select { flex: 1; max-width: none; }
+  .conversation { padding: 18px 12px 24px; }
+  .intake-layout .welcome h2 { font-size: 20px; }
+  .intake-layout .welcome > p:last-child { font-size: 13px; }
+  .intake-layout #start-form { padding: 18px 16px; gap: 18px; }
+  label, .choice-field legend { font-size: 13px; }
+  input:not([type=radio]):not([type=checkbox]):not([type=file]), select, textarea { font-size: 16px; min-height: 44px; }
+  .primary-button, .ghost-button { min-height: 44px; font-size: 13px; padding: 10px 14px; }
+  .stage-form > .primary-button { align-self: stretch; }
+  .stage-form { padding: 16px; }
+  .stage-form > p, .stage-form > small, .stage-form label > small { font-size: 12px; }
+  .stage-form .check-row, .consent-row { font-size: 13px; padding-block: 12px; }
+  .check-row input, .consent-row input { flex-shrink: 0; width: 18px; height: 18px; }
+  .choice-field { align-items: flex-start; }
+  .choice-field legend { min-width: 0; width: 100%; float: none; }
+  .choice-field label span { min-height: 44px; font-size: 13px; padding: 12px; }
+  .agent-bubble, .user-bubble p, .diagnosis-card p, .diagnosis-card li { font-size: 13px; }
+  .raw-transcript > summary, .message-head strong, .chat-actions { font-size: 12px; }
+  .message-head span { font-size: 11px; }
+  .note-composer { padding: 6px; gap: 6px; }
+  .note-composer > button { width: 44px; height: 44px; flex-basis: 44px; }
+  .thread-actions { max-width: 58%; }
+  #open-engineer-help { min-width: 44px; min-height: 44px; font-size: 12px; }
+  .quote-card { padding: 12px; }
+  .quote-row, .quote-card > p, .quote-card > small, .completion-card > p { font-size: 12px; }
+  .quote-total { font-size: 14px; }
+  .selected-part-row { grid-template-columns: minmax(0, 1fr) 60px 44px; gap: 6px; padding: 8px; }
+  .selected-part-row > button { width: 44px; height: 44px; }
+  .selected-part-row input { min-height: 44px !important; }
+  .selected-part-row strong, .part-suggestions > button { font-size: 13px; }
+  .multi-photo-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .multi-photo-picker label > span, .multi-photo-picker input { font-size: 12px; }
+  .multi-photo-picker input::file-selector-button { min-height: 44px; font-size: 12px; }
+  .signature-pad { height: 150px; }
+  .signature-receipt small { font-size: 11px; }
+  .manager-layout .conversation { padding: 8px 0 24px; }
+  .manager-intake { gap: 10px; padding: 12px; }
+  .intake-copy strong, .intake-copy span { font-size: 13px; white-space: normal; }
+  .intake-copy small, .manager-intake label { font-size: 12px; }
+  .manager-intake-actions .primary-button, .manager-intake-actions .ghost-button { min-height: 44px; font-size: 12px; padding: 10px; }
+  .position-card { padding: 12px; }
+  .position-card header strong, .position-point strong { font-size: 13px; }
+  .position-card header small, .position-point b, .position-point small { font-size: 11px; }
+  .position-point small { white-space: normal; }
+  .field-position-heading h3 { font-size: 15px; }
+  .field-position-heading > small { font-size: 11px; }
+  .event-table-head { display: none; }
+  .event-row { min-width: 0; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+  .event-row > :last-child { grid-column: 1 / -1; }
+  .event-row time { font-size: 11px; }
+  .topology-panel { overflow: visible; padding: 14px; }
+  .topology-flow, .topology-legend { min-width: 0; }
+  .topology-source { flex-direction: column; gap: 8px; }
+  .topology-source > i { width: 2px; height: 12px; }
+  .topology-source > i::after { transform: rotate(90deg); top: auto; bottom: -2px; right: -2px; }
+  .flow-node { width: 100%; }
+  .flow-node strong { font-size: 13px; }
+  .flow-node small { font-size: 11px; }
+  .topology-lane { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .topology-lane::before, .topology-stops::before, .topology-branches::before { display: none; }
+  .topology-stops { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topology-engineer strong, .topology-stop strong { font-size: 12px; }
+  .topology-engineer small, .topology-stop small { font-size: 10px; }
+  .topology-legend { flex-wrap: wrap; justify-content: flex-start; font-size: 11px; gap: 10px; }
+  .manager-section-heading p, .manager-section-heading > div:not(:first-child) span { font-size: 12px; }
+}
+@media (max-width: 360px) {
+  .sidebar { padding-inline: 12px; column-gap: 8px; }
+  .brand small { font-size: 9px; }
+  .new-case { padding-inline: 8px; font-size: 11px; }
+  .multi-photo-picker, .topology-stops { grid-template-columns: minmax(0, 1fr); }
+  .intake-layout .conversation { padding-inline: 12px; }
+  .intake-layout #start-form { padding-inline: 12px; }
+}

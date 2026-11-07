@@ -41,6 +41,19 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 
 ## 검증
 
+새 상담은 작업 영역 중앙에 표시합니다. 900px 이하에서는 오늘 접수/담당 현장 목록을
+펼쳐 선택하고, 1200px 이하의 Help는 현재 작업을 보존하는 화면 내 패널로 엽니다.
+넓은 화면에서는 작업과 Help를 나란히 표시합니다.
+
+반응형 브라우저 검증은 실행 중인 8501 서비스와 Node 22+, Playwright를 사용합니다.
+`FIELDNOTE_QA_PACKAGE`는 Playwright가 설치된 프로젝트의 `package.json` 경로입니다.
+실제 모바일 기기의 키보드 동작은 별도 확인 대상이며, 아래 검증은 Chromium의
+320/390/768/1024/1440/1920px 화면과 축소된 뷰포트에서 실행합니다.
+
+```bash
+FIELDNOTE_QA_PACKAGE=/path/to/qa/package.json node --experimental-default-type=module frontend/tests/responsive-smoke.mjs
+```
+
 ```bash
 python3 -m unittest discover -s frontend/dispatch/tests -v
 node frontend/tests/workflow.test.mjs
