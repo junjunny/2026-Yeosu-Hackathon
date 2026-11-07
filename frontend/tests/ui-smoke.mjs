@@ -32,7 +32,7 @@ const set=(name,value,root=w.document)=>{const field=root.querySelector(`[name="
 const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
 const submit=async selector=>{$(selector).dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await tick();};
 const click=async selector=>{$(selector).click();await tick();};
-const clickChoice=async(target,value)=>{const button=[...w.document.querySelectorAll(`[data-demo-target="${target}"]`)].find(item=>item.dataset.demoValue===value);assert.ok(button,`${target}: ${value}`);button.click();await tick();};
+const clickChoice=async(target,value)=>{const button=[...w.document.querySelectorAll(`[data-demo-target="${target}"]`)].find(item=>item.dataset.demoValue===value);assert.ok(button,`${target}: ${value}`);const field=button.closest('form').elements.namedItem(target);field.focus();await tick();assert.ok(button.closest('.demo-choices').classList.contains('is-open'));button.click();await tick();assert.equal(button.closest('.demo-choices').classList.contains('is-open'),false);};
 const item=()=>w.testState.cases[0];
 await clickChoice('customerName','한준희');await clickChoice('registeredAddress','전남광주 나주시 금성관길 6-1');await clickChoice('dispatchAddress','전남광주 나주시 금성관길 6-1');await submit('#start-form');
 assert.equal(item().registeredAddress,'전남광주 나주시 금성관길 6-1');
