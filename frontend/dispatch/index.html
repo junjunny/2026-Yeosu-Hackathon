@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>내일의 농기계 AS 배차 최적화</title>
   <style>
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,'Malgun Gothic',sans-serif;background:#f1f4f8;color:#21334f}
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,'Malgun Gothic',sans-serif;background:#f1f4f8;color:#21334f;word-break:keep-all;overflow-wrap:break-word}
     header{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;background:#142743;color:white;gap:16px;flex-wrap:wrap}
     header h1{font-size:21px;margin:0}header p{font-size:12px;color:#b9c9e0;margin:6px 0 0}button{background:#586bdd;color:white;border:0;border-radius:7px;padding:12px 20px;font:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
     .stats{display:flex;gap:20px;padding:14px 24px;background:white;flex-wrap:wrap;font-size:13px}.stats strong{font-size:21px;margin-left:8px}
@@ -15,7 +15,8 @@
     #map,#fallback{height:100%;width:100%}#map[hidden],#fallback[hidden]{display:none}#fallback{background:repeating-linear-gradient(0deg,#eef2f8 0,#eef2f8 39px,#dce3ed 40px)}
     #map-note{position:absolute;top:12px;left:12px;max-width:90%;background:white;padding:10px;border-radius:5px;z-index:2;font-size:12px;box-shadow:0 2px 9px #0002}
     aside{min-width:0}.card,.issues{background:white;padding:18px;border:1px solid #dce2eb;border-radius:9px;margin-bottom:12px}.card{border-left:5px solid var(--color)}h2{font-size:16px;margin:0 0 8px}h3{font-size:14px}.card p,.card li,.issues li{font-size:12px;line-height:1.7}.card li{margin-bottom:9px}.badge{font-size:11px;padding:5px;background:#fff1d7;border-radius:4px;display:inline-block}.issues{margin:0 16px 20px}.issues ul{max-height:240px;overflow:auto}.pin{border:2px solid white;border-radius:50%;width:28px;height:28px;line-height:24px;text-align:center;color:white;font-weight:bold;box-shadow:0 1px 5px #0005}
-    @media(max-width:850px){main{grid-template-columns:1fr}.map-wrap{position:relative;top:0;height:460px}.stats{gap:12px}}
+    @media(max-width:850px){main{grid-template-columns:1fr;padding:10px}.map-wrap{position:relative;top:0;height:460px}.stats{gap:12px;padding:12px 14px}header{padding:15px}header h1{font-size:18px}button{min-height:44px}.card,.issues{padding:14px}}
+    @media(max-width:480px){.map-wrap{height:390px;min-height:350px}.stats{display:grid;grid-template-columns:1fr 1fr}.stats strong{display:block;margin:4px 0 0}#hq,#progress{padding:10px 14px}}
   </style>
 </head>
 <body>
