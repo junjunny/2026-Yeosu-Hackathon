@@ -63,7 +63,7 @@
         $('map').hidden=false;$('fallback').hidden=true;
         map=new naver.maps.Map('map',{center:new naver.maps.LatLng(configuration.hqCoordinates[1],configuration.hqCoordinates[0]),zoom:11});
         if(latest)draw(latest);
-      }catch(error){map=null;$('map').hidden=true;$('fallback').hidden=false;showMapHelp('지도 초기화 실패');}
+      }catch(error){map=null;$('map').hidden=true;$('fallback').hidden=false;showMapHelp('지도 초기화 실패'+(error&&error.message?' · '+error.message:''));}
     }
     window.initDispatchMap=initMap;
     window.navermap_authFailure=()=>{map=null;$('map').hidden=true;$('fallback').hidden=false;showMapHelp('네이버 지도 인증 실패');if(latest)draw(latest);};
