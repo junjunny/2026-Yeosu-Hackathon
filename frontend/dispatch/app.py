@@ -368,6 +368,12 @@ def fieldnote():return FileResponse(ROOT.parent/'index.html')
 # An explicit file allowlist prevents .env, Python source, CSV and caches being served.
 PUBLIC={p.name:p for p in ROOT.parent.iterdir() if p.suffix in ('.js','.css') and p.is_file()}
 PUBLIC_DATA={'farmingboy_customers_100.json': ROOT.parent/'data'/'farmingboy_customers_100.json'}
+@app.get('/assets/demo-repairs/{filename}')
+def demo_repair_asset(filename:str):
+    if filename not in {'charging-before-after.png', 'fuse-before-after.png', 'signatures.png'}:
+        raise HTTPException(404)
+    return FileResponse(ROOT.parent/'assets'/'demo-repairs'/filename, media_type='image/png')
+
 @app.get('/data/{filename}')
 def public_data(filename:str):
     path=PUBLIC_DATA.get(filename)

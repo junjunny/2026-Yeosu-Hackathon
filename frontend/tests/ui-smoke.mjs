@@ -27,7 +27,7 @@ const fileOverrides={}; const NativeFormData=w.FormData;
 w.FormData=class extends NativeFormData {constructor(form){super(form);this.form=form;}getAll(name){return fileOverrides[this.form.id]?.[name]||super.getAll(name);}get(name){return fileOverrides[this.form.id]?.[name]?.[0]||super.get(name);}};
 const errors=[];w.addEventListener('error',e=>errors.push(e.error));
 const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*?;\n/gm,'');
-w.eval(source+'\nwindow.testState=state;window.testDemoCaseFromCustomer=demoCaseFromCustomer;');
+w.eval(source+'\nwindow.testState=state;window.testDemoCaseFromCustomer=demoCaseFromCustomer;window.testEnrichCompletedDemoEvidence=enrichCompletedDemoEvidence;window.testEngineerTimeline=engineerTimeline;');
 await new Promise(resolve=>setTimeout(resolve,10));
 assert.equal(w.testState.cases.some(entry=>entry.id==='STALE-HAN'),false);assert.equal(w.testState.activeId,null);assert.equal(w.testState.routePlans['엔지니어 A'].stops.length,0);assert.equal(w.testState.preDemoCleanupVersion,'dedupe-existing-hanjunhui-v2');
 assert.deepEqual([...w.testState.staff.counselors],['상담사 A','상담사 B','상담사 C']);const demoCounselors=Array.from({length:6},(_,index)=>w.testDemoCaseFromCustomer({customer_id:`C${index}`,name:`고객${index}`,current_job:{received_at:'2026-11-01T09:00:00+09:00'}},index).counselorName);assert.deepEqual(demoCounselors,['상담사 A','상담사 B','상담사 C','상담사 A','상담사 B','상담사 C']);
@@ -73,11 +73,18 @@ const sheets=await prices.readPriceWorkbook(fixtureFile);assert.equal(sheets[0].
 console.log('PASS: 합성 .xlsx ZIP 압축 해제 → 공유 문자열·시트 읽기 → 소비자가·공임 열 매핑');
 globalThis.localStorage=w.localStorage;
 await click('#role-manager');
+set('password','1234',$('#manager-auth-form'));await submit('#manager-auth-form');
 fileOverrides['catalog-file-form']={priceFile:[fixtureFile]};
 await submit('#catalog-file-form');
 set('nameColumn','0');set('retailColumn','1');set('laborColumn','2');
 await submit('#catalog-map-form');assert.equal(w.testState.catalogSource,'synthetic-prices.xlsx / 합성 가격표');assert.equal(w.testState.catalog[0].laborPrice,3000);
 console.log('PASS: 팀장 화면 xlsx 선택 → 열 미리보기·매핑 → 가격표 등록');
 
-await click('#load-demo');assert.equal(w.testState.cases.filter(c=>c.id.startsWith('DEMO-SCENARIO-')).length,12);const count=w.testState.cases.length;await click('#load-demo');assert.equal(w.testState.cases.length,count);assert.ok(w.testState.cases.some(c=>c.customerName==='고객 A'));assert.ok(w.testState.cases.some(c=>c.customerName==='고객 B'));assert.ok(w.testState.cases.some(c=>c.customerName==='고객 C'));
-console.log('PASS: 고객 A/B/C 단계별 데모12개 생성 · 사용자 기록 보존 · 재실행 중복 없음');
+// Completed evidence only migrates the two named synthetic cases; real workflow records stay intact.
+const existingRecord=JSON.stringify(item());
+const evidenceCases=[['094','류병철','충전플러그'],['093','전보람','메인퓨즈 10 A']].map(([id,name,part])=>({id:`FARMINGBOY-CUS-${id}`,customerName:name,expectedPart:part,stage:'complete',assignedEngineer:'엔지니어 A',scheduledToday:true,dispatchAddress:'합성 현장 주소',arrivedAt:new Date(Date.now()-3600000).toISOString(),completedAt:new Date().toISOString(),repairPlan:{travelFee:33000}}));
+w.testState.cases.push(...evidenceCases);w.testEnrichCompletedDemoEvidence();
+for(const record of evidenceCases){assert.match(record.demoEvidenceBoard,/\.png$/);assert.ok(record.approvalSignature.demoBand);assert.ok(record.finalSignature.demoBand);assert.equal(record.repairPlan.parts[0].name,record.expectedPart);assert.equal(record.repairPlan.travelFee,33000);assert.equal(record.repairPlan.quotedAt,record.approvalSignature.signedAt);}
+const migrated=JSON.stringify(evidenceCases);w.testEnrichCompletedDemoEvidence();assert.equal(JSON.stringify(evidenceCases),migrated);assert.equal(JSON.stringify(item()),existingRecord);
+const timeline=w.testEngineerTimeline('엔지니어 A');assert.match(timeline,/현장 작업 시작/);assert.match(timeline,/고객 최종 서명/);assert.equal((timeline.match(/류병철 · 수리 완료/g)||[]).length,1);
+console.log('PASS: 완료 데모 2건에 증상별 사진·손글씨 서명 연결 · 재실행 보존 · 고객별 오늘 작업 기록');

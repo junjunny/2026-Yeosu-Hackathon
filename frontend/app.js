@@ -174,6 +174,29 @@ async function seedFarmingboyDemo() {
   persist();
 }
 
+
+function enrichCompletedDemoEvidence() {
+  const specs = {
+    'FARMINGBOY-CUS-094': {part:'충전플러그', photo:'charging-before-after.png', signature:'top', notes:'충전플러그의 열 손상과 접촉 불량을 확인해 교체했습니다. 체결 상태와 충전 연결을 재점검하고 정상 작동을 확인했습니다.'},
+    'FARMINGBOY-CUS-093': {part:'메인퓨즈 10 A', photo:'fuse-before-after.png', signature:'bottom', notes:'메인퓨즈를 교체하고 전원 연결부를 점검했습니다. 라이트 점등과 경적 작동을 재시험해 정상 복구를 확인했습니다.'}
+  };
+  for(const item of state.cases) {
+    const spec=specs[item.id];
+    if(!spec || item.stage!=='complete' || item.demoEvidenceVersion===1)continue;
+    const part=defaultCatalog.find(p=>p.name===spec.part);
+    if(!part)continue;
+    item.demoEvidenceVersion=1;
+    item.demoEvidenceBoard='./assets/demo-repairs/'+spec.photo;
+    item.beforePhotos=[item.demoEvidenceBoard]; item.afterPhotos=[item.demoEvidenceBoard];
+    item.repairNotes=spec.notes;
+    const approvalAt=new Date(Date.parse(item.arrivedAt)+10*60000).toISOString();
+    item.repairPlan={...item.repairPlan,details:spec.part+' 교체 및 기능 재점검',parts:[{...part,qty:1,unitPrice:part.retailPrice+part.laborPrice}],quotedAt:approvalAt};
+    item.approvalSignature={typedName:item.customerName,signedAt:approvalAt,image:'./assets/demo-repairs/signatures.png',demoBand:spec.signature};
+    item.finalSignature={typedName:item.customerName,signedAt:item.completedAt,image:'./assets/demo-repairs/signatures.png',demoBand:spec.signature};
+    item.positionEvents=[{type:'arrival',at:item.arrivedAt,address:item.dispatchAddress},{type:'approval',at:approvalAt,address:item.dispatchAddress},{type:'complete',at:item.completedAt,address:item.dispatchAddress}];
+  }
+}
+
 function persist() {
   try { saveState(state); return true; }
   catch { alert('브라우저 저장 공간이 부족합니다. 사진 크기를 줄여 다시 시도해 주세요.'); return false; }
@@ -263,7 +286,9 @@ function quoteCard(item) {
 
 function signatureReceipt(signature, title) {
   if (!signature) return '';
-  const signed = signature.image
+  const signed = signature.demoBand
+    ? `<div class="demo-signature ${signature.demoBand}" role="img" aria-label="${escapeHtml(signature.typedName)} 시연용 손글씨 서명"></div><small>시연용 손글씨 서명 · AI 생성</small>`
+    : signature.image
     ? `<img src="${signature.image}" width="200" height="60" alt="${escapeHtml(title)} 그림 서명">`
     : `<strong>${escapeHtml(signature.typedName)}</strong>`;
   return `<div class="signature-receipt"><span>${escapeHtml(title)}</span>${signed}<small>${date(signature.signedAt)}</small></div>`;
@@ -639,6 +664,7 @@ function privacyNotice() {
   return `<div class="privacy-notice"><h4>개인정보 처리 내역</h4><p>다음에 원활한 수리를 위해서 부탁드립니다.</p><p>고객 이름·등록 주소, 상담·ERP 확인 내역, 점검·수리 기록, 사진과 서명을 이번 수리 확인 및 다음 수리 지원에 사용합니다. 현재 시연 기록은 이 브라우저에 저장됩니다.</p><label class="consent-row"><input type="checkbox" name="privacyRead" required><span>개인정보 처리 내역을 안내받고 확인했습니다.</span></label></div>`;
 }
 function photoGallery(item) {
+  if(item.demoEvidenceBoard)return `<section class="demo-evidence"><div class="demo-evidence-heading"><div><small>REPAIR EVIDENCE</small><h3>수리 전후 비교</h3></div><span>AI 생성 · 합성 시연 자료</span></div><img src="${escapeHtml(item.demoEvidenceBoard)}" alt="${escapeHtml(item.customerName)} 수리 전후 비교 · 합성 시연 사진" loading="lazy"><p>${escapeHtml(item.repairNotes)}</p></section>`;
   return `<div class="photo-gallery">${[['수리 전',item.beforePhotos],['수리 후',item.afterPhotos]].map(([title,photos])=>`<section><h4>${title} 사진 · ${(photos||[]).length}장</h4><div class="photo-pair">${(photos||[]).map((photo,i)=>`<figure><img src="${photo}" width="220" height="130" loading="lazy" alt="${title} 사진 ${i+1}"><figcaption>${title} ${i+1}</figcaption></figure>`).join('')}</div></section>`).join('')}</div>`;
 }
 const priorityLabel = p => ({high:'상',normal:'중',low:'하'})[p] || '중';
@@ -692,20 +718,20 @@ function managerView() {
   const recent30=state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) >= recent30Start);
   const dispatchCases=state.cases.filter(c => c.assignedEngineer && c.stage === 'awaiting-arrival');
   const dispatchTable=state.staff.engineers.map(engineer => { const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer); return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt || c.createdAt)} · 오늘 수리 아님</small></li>`).join('') || '<li>배정된 고객 없음</li>'}</ol></article>`; }).join('');
-  return `<div class="manager-view manager-detail"><section class="manager-section-heading tomorrow-heading"><div><span>NEXT DAY ROUTE CONTROL</span><h2>내일의 배차 최적화</h2><p>오늘 접수·저장된 데모 고객을 후보로 본점 출발 거리와 예상 시간을 계산합니다.</p></div><div><strong>12</strong><span>내일 배차 후보</span></div><div><strong>${state.staff.engineers.length}</strong><span>통합 역량 기사</span></div></section><section class="manager-map"><iframe title="내일의 AS 배차 최적화 지도와 기사별 방문 순서" src="./dispatch/?embedded=1&amp;day=tomorrow" loading="eager"></iframe></section><details class="manager-history"><summary>오늘 기사별 이동 · 위치 근거 기록</summary><p>최종 서명과 현장 주소를 기준으로 한 진행 기록입니다. 실시간 GPS 추적 데이터는 아닙니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+  return `<div class="manager-view manager-detail"><details class="manager-history"><summary>오늘 방문 결과 · 고객별 작업 시작과 완료</summary><p>오늘 수행한 현장 작업을 고객별로 묶은 기록입니다. 다음 방문은 배정 순서 기준이며, 실시간 GPS 위치가 아닙니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details><section class="manager-section-heading tomorrow-heading"><div><span>NEXT DAY ROUTE CONTROL</span><h2>내일의 배차 최적화</h2><p>오늘 접수·저장된 데모 고객을 후보로 본점 출발 거리와 예상 시간을 계산합니다.</p></div><div><strong>12</strong><span>내일 배차 후보</span></div><div><strong>${state.staff.engineers.length}</strong><span>통합 역량 기사</span></div></section><aside class="optimization-note"><h3>내일 배차는 어떤 기준으로 계산하나요?</h3><p>Google OR-Tools가 본사 출발 → 고객 방문 순서를 조합해 총 예상 이동시간이 짧은 배차안을 찾습니다. 기사당 최대 5건, 고객 우선순위를 반영하며 모든 기사는 동일 역량으로 계산합니다.</p><small>현재 계산 기준: 고객 좌표 간 직선거리 × 보정계수와 평균속도로 이동시간 추정 → OR-Tools 배차 → 네이버 Directions 도로 경로 표시. 실시간 교통 기반 최적해를 보장하는 방식은 아닙니다.</small></aside><section class="manager-map"><iframe title="내일의 AS 배차 최적화 지도와 기사별 방문 순서" src="./dispatch/?embedded=1&amp;day=tomorrow" loading="eager"></iframe></section>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
 }
 function performanceView() {
   const rows=technicianPerformance(state.cases,state.staff.engineers,performanceDays);
   return `<section class="performance-panel"><div class="performance-heading"><div><h3>기사별 업무 실적 · 평가 참고</h3><p>완료 기록과 현장 증빙을 바탕으로 면담·평가를 준비합니다.</p></div><label>조회 기간<select id="performance-period">${[[1,'오늘'],[7,'최근 7일'],[30,'최근 30일']].map(([days,label])=>`<option value="${days}" ${days===performanceDays?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="performance-context">현장 경과시간은 도착부터 최종 서명까지이며 대기·점검·수리 시간이 포함됩니다. 접수 난이도, 현장 대기시간, 이동거리와 함께 비교하세요. 자동 점수·순위는 산출하지 않습니다.</p><div class="table-scroll"><table><thead><tr><th>기사</th><th>완료 건수</th><th>평균 현장 경과</th><th>시간 기록</th><th>청구액 합계</th><th>수리 동의/최종 서명</th><th>전후 사진</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.count}건</td><td>${r.averageMinutes==null?'—':r.averageMinutes+'분'}</td><td>${r.timeCount}건 · 누락 ${r.missingTime}건</td><td>${r.quotedCount?won(r.quoted):'—'}<small>견적 ${r.quotedCount}건 기준</small></td><td>${r.approvalCount} / ${r.signatureCount}건</td><td>${r.photoCount} / ${r.count}건</td></tr>`).join('')}</tbody></table></div><p class="performance-context">청구액은 수금·매출 확정액이 아닙니다. 고객 만족도·재수리율·작업 난이도는 아직 수집하지 않습니다. 기록이 없는 기사는 실적 부족으로 판단하지 않습니다.</p><details><summary>평가 근거 접수 기록 보기</summary>${rows.map(r=>`<div class="evidence-row"><strong>${escapeHtml(r.name)}</strong>${r.records.length?`<ul>${r.records.map(c=>`<li><button type="button" class="evidence-case" data-evidence-id="${escapeHtml(c.id)}">${escapeHtml(c.id)}</button> · ${escapeHtml(c.customerName)} · ${date(c.completedAt)} · ${escapeHtml(c.erp?.productName||c.equipmentId||'제품 확인 필요')}</li>`).join('')}</ul>`:'<p>해당 기간의 저장된 완료 기록이 없습니다.</p>'}</div>`).join('')}</details><small>출처: 이 브라우저에 저장된 현장 완료 기록. 지도 배차 CSV는 예정 업무이며 완료 실적으로 집계하지 않습니다.</small></section>`;
 }
 function engineerTimeline(engineer) {
-  const active=state.cases.filter(c=>c.assignedEngineer===engineer && !['complete','remote-closed'].includes(c.stage));
-  const stops=state.routePlans[engineer]?.stops||[];
-  const next=stops.map(s=>active.find(c=>c.id===s.caseId)).find(Boolean)||active[0];
-  const records=state.cases.filter(c=>c.assignedEngineer===engineer).flatMap(c=>(c.positionEvents||[]).map(event=>({...event,customerName:c.customerName}))).sort((a,b)=>b.at.localeCompare(a.at));
-  const metric=state.routePlans[engineer]?.stops.find(s=>s.caseId===next?.id);
-  return `<section class="route-card card"><h4>${escapeHtml(engineer)}</h4>${metric?`<p>이전 방문지/출발지에서 ${(metric.distanceMeters/1000).toFixed(1)}km · ${Math.ceil(metric.durationSeconds/60)}분 (지도 계산값)</p>`:''}<p>${next ? `${next.arrivedAt?'현장 작업 중':'이동 예정'}: ${escapeHtml(next.dispatchAddress)}` : '현재 배정 없음'}</p><ol class="location-flags">${records.map(event=>`<li><span aria-hidden="true">⚑</span> ${escapeHtml({arrival:'도착',approval:'고객 수리 동의 서명',complete:'수리 완료 · 고객 최종 서명'}[event.type])} · ${date(event.at)}<p>${escapeHtml(event.customerName)} · ${escapeHtml(event.address)}</p></li>`).join('')||'<li>아직 위치 기록이 없습니다.</li>'}</ol></section>`;
+  const today=seoulDay(new Date());
+  const rows=state.cases.filter(c=>c.assignedEngineer===engineer&&(c.scheduledToday||((c.arrivedAt||c.completedAt)&&seoulDay(c.arrivedAt||c.completedAt)===today)));
+  const completed=rows.filter(c=>c.stage==='complete').sort((a,b)=>String(a.completedAt).localeCompare(String(b.completedAt)));
+  const next=rows.find(c=>c.stage!=='complete');
+  return `<section class="route-card card"><h4>${escapeHtml(engineer)}</h4><p>다음 방문 예정: ${next?escapeHtml(next.customerName)+' · '+escapeHtml(next.dispatchAddress):'일정 완료'}</p><ol class="location-flags">${completed.map(c=>`<li><strong>${escapeHtml(c.customerName)} · 수리 완료</strong><p>${escapeHtml(c.dispatchAddress)}</p><p>현장 작업 시작 ${date(c.arrivedAt)} → 고객 최종 서명 ${date(c.finalSignature?.signedAt||c.completedAt)}</p><small>현장 소요 ${durationMinutes(c)??'—'}분 · 전후 사진 및 서명 확인 가능</small></li>`).join('')||'<li>오늘 완료된 작업이 없습니다.</li>'}</ol></section>`;
 }
+
 function recordPosition(item,type,at) {item.positionEvents ||= [];item.positionEvents.push({type,at,address:item.dispatchAddress||'출동 장소 확인 필요',basis:'dispatch-address'});}
 
 function renderPriceMapping() {
@@ -799,6 +825,8 @@ async function bootstrap() {
   try {
     cleanupExistingDemoCustomer();
     await seedFarmingboyDemo();
+    enrichCompletedDemoEvidence();
+    persist();
     if (state.role === 'manager') { state.role = 'counselor'; persist(); }
     if (state.role === 'engineer') { selectEngineerWork(); persist(); }
     render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
