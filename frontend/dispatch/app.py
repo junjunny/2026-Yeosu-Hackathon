@@ -18,8 +18,54 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / '.env')
 from .maps import Maps, fallback_route, haversine
 from .routing import solve
+from .records import RecordStore, MEDIA
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI(title='Fieldnote 배차 데모')
+record_store = RecordStore(os.getenv('FIELDNOTE_DATA_DIR', '/data/Documents/Codex/.runtime/fieldnote/data'))
+
+
+@app.get('/api/records')
+def shared_records(since: int | None = None):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(record_store.snapshot(since), headers={'Cache-Control': 'no-store'})
+
+
+async def record_body(request):
+    if request.headers.get('content-type', '').split(';')[0].strip() != 'application/json':
+        raise HTTPException(415, 'JSON 저장 요청만 허용합니다.')
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 32_000_000:
+            raise HTTPException(413, '한 번의 저장은 32MB 이하로 제한됩니다.')
+    try:
+        value = json.loads(body)
+        if not isinstance(value, dict):
+            raise ValueError()
+        return value
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, '저장 요청 형식을 확인해 주세요.')
+
+
+@app.post('/api/records/sync')
+async def save_shared_records(request: Request):
+    body = await record_body(request)
+    return await run_in_threadpool(record_store.sync, body.get('changes', []), body.get('settings', {}))
+
+
+@app.post('/api/records/import')
+async def import_browser_records(request: Request):
+    body = await record_body(request)
+    return await run_in_threadpool(record_store.import_legacy, body.get('cases', []))
+
+
+@app.get('/api/records/media/{filename}')
+def shared_media(filename: str):
+    if not MEDIA.fullmatch(filename) or not (record_store.media / filename).is_file():
+        raise HTTPException(404)
+    return FileResponse(record_store.media / filename, headers={'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'})
+
 runs = {}
 run_lock = Lock()
 mapper = Maps()

@@ -29,6 +29,7 @@
         <div class="topbar-actions"><span class="mode-tag">DEMO MODE</span><div class="role-switch" role="group" aria-label="사용자 역할"><button id="role-counselor" type="button">상담사</button><button id="role-manager" type="button">팀장</button><button id="role-engineer" type="button">엔지니어</button></div><label class="staff-picker">담당자<select id="staff-select" aria-label="담당자 선택"></select></label></div>
       </header>
 
+      <div id="shared-storage-status" class="shared-storage-status" role="status" data-kind="saving"><span id="shared-storage-text">공유 기록 연결 중…</span><button type="button" id="shared-storage-action" hidden>연결 재시도</button></div>
       <div class="content-grid">
         <section class="conversation-panel" aria-label="접수 대화">
           <div class="conversation-meta"><div><span class="meta-dot"></span><span id="thread-id">새 접수</span></div><div class="thread-actions"><span id="thread-status">준비 중</span><button type="button" id="open-engineer-help" hidden aria-label="현재 화면에서 엔지니어 챗봇 도움말 열기">Help</button></div></div>
@@ -48,7 +49,7 @@
       <h2 id="manager-auth-title">팀장 화면 확인</h2>
       <p>팀장 비밀번호를 입력해 주세요.</p>
       <label>비밀번호<input id="manager-password" name="password" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="20" autocomplete="current-password" required></label>
-      <p class="manager-auth-error" id="manager-auth-error" role="alert" hidden>비밀번호가 올바르지 않습니다.</p>
+      <p class="manager-auth-error" id="manager-auth-error" role="alert" hidden>비밀번호가 틀립니다. (비밀번호 : 1234)</p>
       <div><button type="button" class="ghost-button" id="manager-auth-cancel">취소</button><button type="submit" class="primary-button">팀장 화면 열기</button></div>
     </form>
   </div>

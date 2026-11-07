@@ -37,7 +37,14 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 - 주소 캐시: `dispatch/.private/geocoding.sqlite`
 - 비밀키: `dispatch/.env`에만 저장하며 Git과 HTTP 공개 경로에서 제외
 - 공개 저장소에는 `.env.example`만 포함
-- 상담·현장 기록은 현재 같은 브라우저의 `localStorage`에 저장
+- 상담·현장 기록: `/data/Documents/Codex/.runtime/fieldnote/data/records.sqlite3`
+- 수리 사진·서명 이미지: `/data/Documents/Codex/.runtime/fieldnote/data/media/`
+- 브라우저는 역할·선택 화면·전송 대기 캐시를 보관하며, 서버 저장 완료 후 다른 기기에서 공유
+
+이전 브라우저 기록은 그 브라우저에서 서비스를 다시 열면 자동으로 이전됩니다.
+접수별 버전 검사로 동시 수정 덮어쓰기를 막고, 상단에서 저장/오류/충돌 상태를
+확인할 수 있습니다. 같은 주소에 접속하는 공유 데모 공간이며 서버 인증·권한 분리는
+아직 구현하지 않았습니다. 자세한 저장·복구 절차는 [운영 안내](ops/README.md)를 확인하세요.
 
 제공된 키를 코드, README, 테스트, 커밋에 넣지 마세요. 외부 API가 실패하면 지도는 `대체 경로` 점선으로 계속 동작합니다.
 
@@ -64,4 +71,4 @@ node frontend/tests/workflow.test.mjs
 node --check frontend/app.js && node --check frontend/services.js
 ```
 
-AgentStream의 실제 호출 URL과 정확한 요청/응답 계약은 주최 측 설정값을 `.env`에 입력해 최종 확인해야 합니다. 현재 프록시는 `message`, `conversation_id`, `history` JSON과 Bearer 인증을 기본 계약으로 사용합니다.
+AgentStream은 서버에서 X-API-Key 인증으로 health 확인 → 세션 생성 → 메시지 스트리밍을 호출합니다. 실제 연결 설정은 `dispatch/.env`에만 둡니다.

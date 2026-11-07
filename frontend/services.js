@@ -55,7 +55,7 @@ export function decideDispatch(flags, searchStatus, count, manualChoice = null) 
 
 export function createCase(customerId, equipmentId) {
   return {
-    id: `DEMO-${Date.now().toString(36).toUpperCase()}`,
+    id: `DEMO-${crypto.randomUUID()}`,
     createdAt: new Date().toISOString(), customerId, equipmentId,
     stage: 'counseling', status: '상담 중',
     transcript: [], flags: null, analysis: null, dispatch: null,

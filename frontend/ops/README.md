@@ -11,8 +11,21 @@ uvicorn을 연결하면 해당 세션이 끝날 때 서버도 종료될 수 있�
 - 실행 계정: `ubuntu`
 - 공개 주소: https://devopen-gpu.jntp-ax.or.kr/i/XUYja4vr7_KF-hZ5/
 
-브라우저 상담·사진·서명은 기존처럼 각 브라우저의 localStorage에 보관됩니다.
-서비스 재시작은 브라우저 데이터를 초기화하지 않습니다.
+상담·현장 기록은 `/data/Documents/Codex/.runtime/fieldnote/data/records.sqlite3`에,
+사진·서명은 같은 폴더의 `media/`에 저장됩니다. 기록은 같은 서비스 주소를 사용하는
+기기 사이에서 공유되며 3초마다 변경을 확인합니다. 역할·선택 화면과 전송 대기 캐시는
+브라우저 localStorage에 남지만, 저장 완료된 기록의 기준은 서버입니다.
+
+기존 브라우저 기록은 해당 브라우저에서 새 버전 서비스를 열면 자동으로 이전됩니다.
+다른 기기가 먼저 저장한 동일 ID는 덮어쓰지 않고, 다른 이전 사본은 SQLite의
+`legacy_archive` 테이블에 보관합니다. `records`는 접수별 버전으로 동시 수정을
+감지합니다. 실패/충돌 시 상단 안내를 확인하고, 저장 완료 표시 전에는 창을 닫지 않습니다.
+매일 생성되는 기본 합성 데이터는 소스에서 생성하고, 실제 변경된 데모 기록만 서버에
+날짜별로 저장하므로 다음 날 시드 갱신이 사용자 접수 기록을 지우지 않습니다.
+
+현재 서비스는 심사위원 체험을 위한 하나의 공유 데모 공간입니다. 팀장 비밀번호는
+화면 진입용 데모 장치이며 서버 사용자 인증·권한 분리는 구현하지 않았습니다.
+운영용 인증·접근 권한·보관 기간은 실제 기업 적용 시 별도 구성해야 합니다.
 
 ## 최초 등록 / 호스트 재생성 후 복구
 
@@ -23,6 +36,7 @@ uvicorn을 연결하면 해당 세션이 끝날 때 서버도 종료될 수 있�
 ```sh
 sudo install -d -m 755 /etc/sv/fieldnote/log
 sudo install -d -o ubuntu -g ubuntu -m 700 /data/Documents/Codex/.runtime/fieldnote/logs
+sudo install -d -o ubuntu -g ubuntu -m 700 /data/Documents/Codex/.runtime/fieldnote/data
 sudo install -m 755 frontend/ops/runit/run /etc/sv/fieldnote/run
 sudo install -m 755 frontend/ops/runit/log/run /etc/sv/fieldnote/log/run
 sudo ln -s /etc/sv/fieldnote /etc/service/fieldnote

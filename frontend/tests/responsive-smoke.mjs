@@ -6,6 +6,12 @@ const base=process.env.FIELDNOTE_BASE_URL||'http://127.0.0.1:8501/';
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
 const page=await browser.newPage();page.setDefaultTimeout(15000);
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
+// Isolate layout fixtures from the shared workspace. Persistence is tested separately.
+await page.route('**/api/records**',async route=>{
+  const request=route.request();const body=request.method()==='POST'?request.postDataJSON():{};
+  const value=request.url().includes('/sync')?{cases:(body.changes||[]).map(c=>({...c.record,_serverRevision:c.baseRevision+1})),settings:Object.fromEntries(Object.entries(body.settings||{}).map(([k,c])=>[k,{value:c.value,revision:c.baseRevision+1}]))}:request.method()==='POST'?{imported:0,archived:0}:{revision:0,cases:[],settings:{}};
+  await route.fulfill({json:value});
+});
 // UI validation must not send questions or travel requests to external paid APIs.
 await page.route('**/api/dispatch/travel-estimate',r=>r.fulfill({json:{hqAddress:'합성 본사',distanceKm:12,durationMinutes:20,region:'naju',travelFee:33000,source:'UI 검증 데이터'}}));
 await page.route('**/api/agentstream/**',r=>r.fulfill({status:503,json:{detail:'UI 검증용 응답'}}));
@@ -21,7 +27,12 @@ try {
     },{seed,role,stage});
     await page.reload();
     if(role==='manager'){
-      await page.locator('#role-manager').click();await page.locator('#manager-password').fill('1234');
+      await page.locator('#role-manager').click();await page.locator('#manager-password').fill('0000');
+      await page.locator('#manager-auth-form button[type=submit]').click();
+      assert.equal(await page.locator('#manager-password').getAttribute('type'),'password');
+      assert.equal(await page.locator('#manager-auth-error').textContent(),'비밀번호가 틀립니다. (비밀번호 : 1234)');
+      assert.equal(await page.locator('#manager-auth-error').isVisible(),true);
+      await page.locator('#manager-password').fill('1234');
       await page.locator('#manager-auth-form button[type=submit]').click();await page.locator('.ops-dashboard').waitFor();
     }else await page.locator(stage?'.raw-transcript, #counselor-chat':'#start-form').first().waitFor();
   }

@@ -8,6 +8,7 @@ import { defaultCatalog, catalogSource } from './parts-catalog.js';
 import { dashboardStats, durationMinutes, closeReady, seoulDay } from './dashboard.js';
 
 import { technicianPerformance } from './performance.js';
+import { createRecordSync } from './record-sync.js';
 
 const state = migrateState(loadState());
 let performanceDays = 30;
@@ -17,6 +18,8 @@ let routeBusy = false;
 let engineerHelpOpen = false;
 let engineerHelpFor = '';
 let mobileCaseListOpen = false;
+let recordSync = null;
+let formDirty = false;
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const lines = value => escapeHtml(value).replace(/\n/g, '<br>');
@@ -35,8 +38,6 @@ let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
 const DEMO_SEED_VERSION = `farmingboy-customers-100-v8-counselor-distribution-${seoulDay(new Date())}`;
-const PRE_DEMO_CLEANUP_VERSION = 'dedupe-existing-hanjunhui-v2';
-const PREVIOUS_CLEANUP_VERSION = 'remove-existing-hanjunhui-v1';
 const MANAGER_PASSWORD = '1234';
 const DEMO_CHOICES = {
   customerName: ['한준희'],
@@ -115,7 +116,10 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null, active =
 }
 
 async function seedFarmingboyDemo() {
-  if (state.demoSeedVersion === DEMO_SEED_VERSION) return;
+  if (state.demoSeedVersion === DEMO_SEED_VERSION) {
+    for(const item of state.cases)if(item.id.startsWith('FARMINGBOY-'))item.demoDay ||= seoulDay(new Date());
+    return;
+  }
   const retainedCases = state.cases.filter(item => !String(item.id || '').startsWith('FARMINGBOY-'));
   const retainedActiveId = retainedCases.some(item => item.id === state.activeId) ? state.activeId : null;
   const response = await fetch(DEMO_DATA_URL);
@@ -167,6 +171,7 @@ async function seedFarmingboyDemo() {
     item.finalSignature = { typedName: item.customerName, signedAt: completedAt, image: null };
     item.positionEvents = [{ type:'arrival', at:item.arrivedAt, address:item.dispatchAddress, basis:'dispatch-address' }, { type:'complete', at:completedAt, address:item.dispatchAddress, basis:'final-signature' }];
   });
+  for(const item of demoCases)item.demoDay=today;
   state.cases = [...demoCases, ...retainedCases];
   state.activeId = retainedActiveId;
   state.staff = { counselors: ['상담사 A', '상담사 B', '상담사 C'], engineers };
@@ -199,23 +204,11 @@ function enrichCompletedDemoEvidence() {
 }
 
 function persist() {
-  try { saveState(state); return true; }
-  catch { alert('브라우저 저장 공간이 부족합니다. 사진 크기를 줄여 다시 시도해 주세요.'); return false; }
+  try { saveState(state); } catch { /* Local cache is optional; the server is the shared source. */ }
+  recordSync?.schedule();
+  return true;
 }
-function cleanupExistingDemoCustomer() {
-  if(state.preDemoCleanupVersion===PRE_DEMO_CLEANUP_VERSION)return;
-  const hanCases=state.cases.filter(item=>String(item.customerName||'').replace(/\s/g,'')==='한준희');
-  let keepId=null;
-  if(state.preDemoCleanupVersion===PREVIOUS_CLEANUP_VERSION&&hanCases.length){
-    keepId=[...hanCases].sort((a,b)=>Number(Boolean(b.managerApprovedAt||b.assignedEngineer))-Number(Boolean(a.managerApprovedAt||a.assignedEngineer))||Number(b.stage==='complete')-Number(a.stage==='complete')||String(b.receivedAt||b.createdAt).localeCompare(String(a.receivedAt||a.createdAt)))[0].id;
-  }
-  const removedIds=new Set(hanCases.filter(item=>item.id!==keepId).map(item=>item.id));
-  state.cases=state.cases.filter(item=>!removedIds.has(item.id));
-  if(removedIds.has(state.activeId))state.activeId=null;
-  for(const plan of Object.values(state.routePlans||{}))if(Array.isArray(plan?.stops))plan.stops=plan.stops.filter(stop=>!removedIds.has(stop.caseId));
-  state.preDemoCleanupVersion=PRE_DEMO_CLEANUP_VERSION;
-  persist();
-}
+
 function formError(form, message, fieldName) {
   let error = form.querySelector('.form-error');
   if (!error) { error = document.createElement('p'); error.className = 'form-error'; error.setAttribute('role', 'alert'); form.prepend(error); }
@@ -412,6 +405,7 @@ function setEngineerHelp(open) {
 }
 
 function render(scrollPosition = 'bottom') {
+  formDirty=false;
   const item = current();
   $('#page-title').textContent = state.role === 'manager' ? '팀장 대시보드' : item ? `${item.customerName} 상담` : '새 상담';
   $('#thread-id').textContent = item?.id || '새 접수';
@@ -502,8 +496,22 @@ $('#conversation').addEventListener('focusin', event => {
   const form=field.closest('form');const popup=[...(form?.querySelectorAll('.demo-choices')||[])].find(item=>item.querySelector(`[data-demo-target="${CSS.escape(field.name)}"]`));
   closeDemoChoices(popup);popup?.classList.add('is-open');
 });
+$('#conversation').addEventListener('input',()=>{formDirty=true;});
+$('#conversation').addEventListener('change',()=>{formDirty=true;});
+$('#conversation').addEventListener('pointerdown',event=>{if(event.target.matches('.signature-pad'))formDirty=true;});
+function requireSharedConnection(event){
+  if(recordSync&&!recordSync.ready){event.preventDefault();event.stopImmediatePropagation();$('#shared-storage-text').textContent='서버 연결 후 저장할 수 있습니다. 연결 재시도를 눌러 주세요.';}
+}
+$('#conversation').addEventListener('submit',requireSharedConnection,true);
+$('#conversation').addEventListener('click',event=>{if(event.target.closest('[data-confirm-priority],[data-manager-approve],#batch-assign'))requireSharedConnection(event);},true);
+$('#shared-storage-action').addEventListener('click',async()=>{
+  if(recordSync?.ready&&(formDirty||recordSync.hasPending)&&!window.confirm('작성 중인 화면을 서버 기록으로 바꿀까요? 이미 제출한 충돌 내역은 서버에 별도 보관됩니다.'))return;
+  formDirty=false;await recordSync?.useServer();
+});
+window.addEventListener('beforeunload',event=>{if(recordSync?.hasPending){event.preventDefault();event.returnValue='';}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)recordSync?.refresh();});
 $('#conversation').addEventListener('keydown', event=>{if(event.key==='Escape')closeDemoChoices();});
-document.addEventListener('pointerdown',event=>{if(!event.target.closest('.demo-choices, input[name], textarea[name]'))closeDemoChoices();});
+document.addEventListener('click',event=>{if(!event.target.closest('.demo-choices, input[name], textarea[name]'))closeDemoChoices();});
 $('#conversation').addEventListener('click', event => {
   const demoButton=event.target.closest('[data-demo-target]');
   if(demoButton){
@@ -674,7 +682,7 @@ function erpForm(item) {
   return `<form id="erp-form" class="stage-form card"><h3>통화 종료 후 ERP 확인</h3><p>상담 원문은 잠겼습니다. ERP를 조회한 후 직접 입력해 주세요.</p><label>제품명<input name="productName" required maxlength="150">${demoChoices('productName', DEMO_CHOICES.productName)}</label><label>구입 시점<input name="purchaseDate" required maxlength="80" placeholder="예: 2024년 3월 / 확인 불가 시 사유 입력">${demoChoices('purchaseDate', DEMO_CHOICES.purchaseDate)}</label><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" rows="4" placeholder="수리 날짜·내용을 적어 주세요. 이력이 없으면 ‘없음’으로 입력합니다."></textarea>${demoChoices('repairHistory', DEMO_CHOICES.repairHistory)}</label><button class="primary-button" type="submit" ${sending?'disabled':''}>ERP 정보 저장 · 접수 전달</button></form>`;
 }
 function privacyNotice() {
-  return `<div class="privacy-notice"><h4>개인정보 처리 내역</h4><p>다음에 원활한 수리를 위해서 부탁드립니다.</p><p>고객 이름·등록 주소, 상담·ERP 확인 내역, 점검·수리 기록, 사진과 서명을 이번 수리 확인 및 다음 수리 지원에 사용합니다. 현재 시연 기록은 이 브라우저에 저장됩니다.</p><label class="consent-row"><input type="checkbox" name="privacyRead" required><span>개인정보 처리 내역을 안내받고 확인했습니다.</span></label></div>`;
+  return `<div class="privacy-notice"><h4>개인정보 처리 내역</h4><p>다음에 원활한 수리를 위해서 부탁드립니다.</p><p>고객 이름·등록 주소, 상담·ERP 확인 내역, 점검·수리 기록, 사진과 서명을 이번 수리 확인 및 다음 수리 지원에 사용합니다. 접수·수리 기록과 사진·서명은 공유 서버에 저장되어 담당자가 함께 확인합니다.</p><label class="consent-row"><input type="checkbox" name="privacyRead" required><span>개인정보 처리 내역을 안내받고 확인했습니다.</span></label></div>`;
 }
 function photoGallery(item) {
   if(item.demoEvidenceBoard)return `<section class="demo-evidence"><div class="demo-evidence-heading"><div><small>REPAIR EVIDENCE</small><h3>수리 전후 비교</h3></div><span>AI 생성 · 합성 시연 자료</span></div><img src="${escapeHtml(item.demoEvidenceBoard)}" alt="${escapeHtml(item.customerName)} 수리 전후 비교 · 합성 시연 사진" loading="lazy"><p>${escapeHtml(item.repairNotes)}</p></section>`;
@@ -735,7 +743,7 @@ function managerView() {
 }
 function performanceView() {
   const rows=technicianPerformance(state.cases,state.staff.engineers,performanceDays);
-  return `<section class="performance-panel"><div class="performance-heading"><div><h3>기사별 업무 실적 · 평가 참고</h3><p>완료 기록과 현장 증빙을 바탕으로 면담·평가를 준비합니다.</p></div><label>조회 기간<select id="performance-period">${[[1,'오늘'],[7,'최근 7일'],[30,'최근 30일']].map(([days,label])=>`<option value="${days}" ${days===performanceDays?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="performance-context">현장 경과시간은 도착부터 최종 서명까지이며 대기·점검·수리 시간이 포함됩니다. 접수 난이도, 현장 대기시간, 이동거리와 함께 비교하세요. 자동 점수·순위는 산출하지 않습니다.</p><div class="table-scroll"><table><thead><tr><th>기사</th><th>완료 건수</th><th>평균 현장 경과</th><th>시간 기록</th><th>청구액 합계</th><th>수리 동의/최종 서명</th><th>전후 사진</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.count}건</td><td>${r.averageMinutes==null?'—':r.averageMinutes+'분'}</td><td>${r.timeCount}건 · 누락 ${r.missingTime}건</td><td>${r.quotedCount?won(r.quoted):'—'}<small>견적 ${r.quotedCount}건 기준</small></td><td>${r.approvalCount} / ${r.signatureCount}건</td><td>${r.photoCount} / ${r.count}건</td></tr>`).join('')}</tbody></table></div><p class="performance-context">청구액은 수금·매출 확정액이 아닙니다. 고객 만족도·재수리율·작업 난이도는 아직 수집하지 않습니다. 기록이 없는 기사는 실적 부족으로 판단하지 않습니다.</p><details><summary>평가 근거 접수 기록 보기</summary>${rows.map(r=>`<div class="evidence-row"><strong>${escapeHtml(r.name)}</strong>${r.records.length?`<ul>${r.records.map(c=>`<li><button type="button" class="evidence-case" data-evidence-id="${escapeHtml(c.id)}">${escapeHtml(c.id)}</button> · ${escapeHtml(c.customerName)} · ${date(c.completedAt)} · ${escapeHtml(c.erp?.productName||c.equipmentId||'제품 확인 필요')}</li>`).join('')}</ul>`:'<p>해당 기간의 저장된 완료 기록이 없습니다.</p>'}</div>`).join('')}</details><small>출처: 이 브라우저에 저장된 현장 완료 기록. 지도 배차 CSV는 예정 업무이며 완료 실적으로 집계하지 않습니다.</small></section>`;
+  return `<section class="performance-panel"><div class="performance-heading"><div><h3>기사별 업무 실적 · 평가 참고</h3><p>완료 기록과 현장 증빙을 바탕으로 면담·평가를 준비합니다.</p></div><label>조회 기간<select id="performance-period">${[[1,'오늘'],[7,'최근 7일'],[30,'최근 30일']].map(([days,label])=>`<option value="${days}" ${days===performanceDays?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="performance-context">현장 경과시간은 도착부터 최종 서명까지이며 대기·점검·수리 시간이 포함됩니다. 접수 난이도, 현장 대기시간, 이동거리와 함께 비교하세요. 자동 점수·순위는 산출하지 않습니다.</p><div class="table-scroll"><table><thead><tr><th>기사</th><th>완료 건수</th><th>평균 현장 경과</th><th>시간 기록</th><th>청구액 합계</th><th>수리 동의/최종 서명</th><th>전후 사진</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.count}건</td><td>${r.averageMinutes==null?'—':r.averageMinutes+'분'}</td><td>${r.timeCount}건 · 누락 ${r.missingTime}건</td><td>${r.quotedCount?won(r.quoted):'—'}<small>견적 ${r.quotedCount}건 기준</small></td><td>${r.approvalCount} / ${r.signatureCount}건</td><td>${r.photoCount} / ${r.count}건</td></tr>`).join('')}</tbody></table></div><p class="performance-context">청구액은 수금·매출 확정액이 아닙니다. 고객 만족도·재수리율·작업 난이도는 아직 수집하지 않습니다. 기록이 없는 기사는 실적 부족으로 판단하지 않습니다.</p><details><summary>평가 근거 접수 기록 보기</summary>${rows.map(r=>`<div class="evidence-row"><strong>${escapeHtml(r.name)}</strong>${r.records.length?`<ul>${r.records.map(c=>`<li><button type="button" class="evidence-case" data-evidence-id="${escapeHtml(c.id)}">${escapeHtml(c.id)}</button> · ${escapeHtml(c.customerName)} · ${date(c.completedAt)} · ${escapeHtml(c.erp?.productName||c.equipmentId||'제품 확인 필요')}</li>`).join('')}</ul>`:'<p>해당 기간의 저장된 완료 기록이 없습니다.</p>'}</div>`).join('')}</details><small>출처: 합성 데모 및 공유 서버의 현장 완료 기록. 지도 배차 CSV는 예정 업무이며 완료 실적으로 집계하지 않습니다.</small></section>`;
 }
 function engineerTimeline(engineer) {
   const today=seoulDay(new Date());
@@ -836,12 +844,25 @@ $('#conversation').addEventListener('submit',async event=>{
 
 async function bootstrap() {
   try {
-    cleanupExistingDemoCustomer();
+    // Preserve existing user-created records for the one-time server import.
     await seedFarmingboyDemo();
     enrichCompletedDemoEvidence();
-    persist();
-    if (state.role === 'manager') { state.role = 'counselor'; persist(); }
-    if (state.role === 'engineer') { selectEngineerWork(); persist(); }
+    if (state.role === 'manager') state.role = 'counselor';
+    if (state.role === 'engineer') selectEngineerWork();
+    recordSync=createRecordSync({state,saveCache:()=>saveState(state),isEditing:id=>state.activeId===id&&(formDirty||sending),
+      onStatus:({text,kind,ready})=>{
+        $('#shared-storage-text').textContent=text;
+        $('#shared-storage-status').dataset.kind=kind;
+        $('#shared-storage-action').hidden=!['error','conflict'].includes(kind);
+        $('#shared-storage-action').textContent=ready?'새 기록 확인':'연결 재시도';
+      },
+      onRemote:(force=false)=>{
+        if(!force&&(formDirty||sending))return;
+        const scroll=$('#conversation').scrollTop;
+        render('top');$('#conversation').scrollTop=scroll;
+      }
+    });
+    await recordSync.start();
     render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
     renderPriceMapping();
   } catch (error) {
