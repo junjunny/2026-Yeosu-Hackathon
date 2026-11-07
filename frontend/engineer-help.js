@@ -5,6 +5,8 @@ const messages = document.querySelector('#messages');
 const status = document.querySelector('#help-status');
 const question = document.querySelector('#question');
 const engineer = new URLSearchParams(location.search).get('engineer') || '엔지니어';
+const embedded = new URLSearchParams(location.search).get('embedded') === '1';
+document.body.classList.toggle('embedded', embedded);
 document.querySelector('#help-title').textContent = `${engineer} 작업 도움말`;
 const conversation = { id: `ENGINEER-HELP-${engineer}-${crypto.randomUUID()}`, transcript: [] };
 const engineerEndpoint = new URL('../api/agentstream/engineer-chat', location.href).href;
