@@ -292,7 +292,7 @@ function engineerView(item) {
   if (item.assignedEngineer && item.assignedEngineer !== state.selectedEngineer) return '<div class="waiting-box">다른 기사에게 배정된 접수입니다. 담당자를 변경해 확인하세요.</div>';
   if (item.stage === 'counseling') return `<div class="waiting-box">상담이 진행 중입니다. 통화 종료 후 기술 진단과 원문 대화가 표시됩니다.</div>${transcript(item, true)}`;
   const log = item.fieldLog.map(message => bubble(message.role, message.text, message.createdAt, '', message.authorName)).join('');
-  const assistantMode = `<section class="engineer-assistant-mode" aria-label="엔지니어 담당 챗봇 상태"><div><span class="assistant-mode-dot"></span><strong>엔지니어 담당 챗봇</strong><small>저장 기록 모드</small></div><p>API 연결 전에는 저장된 상담 원문·진단·체크리스트를 바탕으로 현장 절차를 이어갑니다. API 키가 준비되면 이 영역에 엔지니어 전용 답변을 연결합니다.</p></section>`;
+  const assistantMode = '';
   return `${assistantMode}${diagnosisCard(item)}${item.erp ? `<div class="quote-card"><b>ERP 확인</b><p>제품명: ${escapeHtml(item.erp.productName)} · 구입 시점: ${escapeHtml(item.erp.purchaseDate)}</p><p>과거 수리 이력: ${lines(item.erp.repairHistory)}</p></div>` : ''}${transcript(item, true)}<div class="field-conversation"><div class="thread-intro"><span class="thread-line"></span><span>현장 진행 대화</span><span class="thread-line"></span></div>${log}${stageForm(item)}</div>`;
 }
 
@@ -308,6 +308,7 @@ function render(scrollPosition = 'bottom') {
   $('#page-title').textContent = state.role === 'manager' ? '팀장 대시보드' : item ? `${item.customerName} 상담` : '새 상담';
   $('#thread-id').textContent = item?.id || '새 접수';
   $('#thread-status').textContent = statusText(item);
+  $('#open-engineer-help').hidden = state.role !== 'engineer' || state.selectedEngineer !== '엔지니어 A';
   $('#case-count').textContent = state.cases.length;
   $('#role-manager').classList.toggle('active',state.role==='manager');
   $('#role-manager').setAttribute('aria-pressed',String(state.role==='manager'));
@@ -369,6 +370,11 @@ async function imageData(file) {
 $('#new-case').addEventListener('click', () => { state.activeId = null; state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
+$('#open-engineer-help').addEventListener('click', () => {
+  if (state.role === 'engineer' && state.selectedEngineer === '엔지니어 A') {
+    window.open('./engineer-help/', 'fieldnote-engineer-help', 'width=580,height=760,resizable=yes,scrollbars=yes');
+  }
+});
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
   const partButton=event.target.closest('[data-select-part]');if(partButton){addPartSelection(partButton.dataset.selectPart);return;}
