@@ -78,12 +78,12 @@ function deltaText(payload) {
   return '';
 }
 
-export async function replyToCounselor(item, rawText, onDelta = null) {
+export async function replyToCounselor(item, rawText, onDelta = null, endpoint = './api/agentstream/chat') {
   const history = item.transcript.slice(-20).map(message => ({
     role: message.role === 'assistant' ? 'assistant' : 'user',
     content: String(message.text || '')
   }));
-  const response = await fetch('./api/agentstream/chat', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseId: item.id, message: rawText, history }),
