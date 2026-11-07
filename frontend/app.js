@@ -14,6 +14,8 @@ let performanceDays = 30;
 let priceSheets = [];
 let priceFileName = '';
 let routeBusy = false;
+let engineerHelpOpen = false;
+let engineerHelpFor = '';
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const lines = value => escapeHtml(value).replace(/\n/g, '<br>');
@@ -303,6 +305,26 @@ function renderDetails() {
   return `<div class="detail-card"><div class="detail-heading"><span class="eyebrow">접수 진행</span><h3>${item ? escapeHtml(item.id) : '새 상담 대기'}</h3><p>${item ? `${escapeHtml(item.customerName)} · ${escapeHtml(item.registeredAddress || '등록 주소 확인 필요')}` : '고객과 장비를 선택해 시작하세요.'}</p></div><div class="progress-list">${stages.map((name,i) => `<div class="progress-item ${i < step ? 'completed' : i === step ? 'current' : ''}"><span>${i < step ? '✓' : i+1}</span><strong>${escapeHtml(name)}</strong></div>`).join('')}</div></div><div class="help-card"><span aria-hidden="true">ⓘ</span><div><strong>해커톤 시연</strong><p>상담 채팅은 서버의 AgentStream 프록시를 호출합니다. 고객·사례·가격·서명은 합성 데이터입니다.</p></div></div>`;
 }
 
+function setEngineerHelp(open) {
+  engineerHelpOpen = Boolean(open && state.role === 'engineer');
+  const panel = $('#engineer-help-panel');
+  const frame = $('#engineer-help-frame');
+  const grid = $('.content-grid');
+  panel.hidden = !engineerHelpOpen;
+  grid.classList.toggle('help-open', engineerHelpOpen);
+  $('#open-engineer-help').setAttribute('aria-expanded', String(engineerHelpOpen));
+  if (!engineerHelpOpen) return;
+  const engineer = state.selectedEngineer || '엔지니어';
+  $('#engineer-help-title').textContent = `${engineer} 작업 도움말`;
+  if (engineerHelpFor !== engineer || !frame.src) {
+    const helpUrl = new URL('./engineer-help/', window.location.href);
+    helpUrl.searchParams.set('engineer', engineer);
+    helpUrl.searchParams.set('embedded', '1');
+    frame.src = helpUrl.href;
+    engineerHelpFor = engineer;
+  }
+}
+
 function render(scrollPosition = 'bottom') {
   const item = current();
   $('#page-title').textContent = state.role === 'manager' ? '팀장 대시보드' : item ? `${item.customerName} 상담` : '새 상담';
@@ -324,6 +346,7 @@ function render(scrollPosition = 'bottom') {
   $('#conversation').innerHTML = state.role==='manager' ? farmingboyManagerSummary()+managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
   $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
   $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
+  setEngineerHelp(engineerHelpOpen);
   bindSignature();
   if(state.role==='engineer'&&item?.stage==='repair-plan')loadTravelEstimate(item);
   $('#conversation').scrollTop = scrollPosition === 'top' ? 0 : $('#conversation').scrollHeight;
@@ -371,13 +394,9 @@ $('#new-case').addEventListener('click', () => { state.activeId = null; state.ro
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
 $('#open-engineer-help').addEventListener('click', () => {
-  if (state.role === 'engineer') {
-    const helpUrl = new URL('./engineer-help/', window.location.href);
-    helpUrl.searchParams.set('engineer', state.selectedEngineer || '엔지니어');
-    const engineerIndex = Math.max(0, state.staff.engineers.indexOf(state.selectedEngineer));
-    window.open(helpUrl.href, `fieldnote-engineer-help-${engineerIndex}`, 'width=580,height=760,resizable=yes,scrollbars=yes');
-  }
+  setEngineerHelp(!engineerHelpOpen);
 });
+$('#close-engineer-help').addEventListener('click', () => setEngineerHelp(false));
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
   const partButton=event.target.closest('[data-select-part]');if(partButton){addPartSelection(partButton.dataset.selectPart);return;}
