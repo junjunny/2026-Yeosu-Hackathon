@@ -67,6 +67,22 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(route['durationSeconds'], 120)
             self.assertEqual(len(calls), 1)
 
+    def test_travel_estimate_uses_addresses_and_applies_fee_rules(self):
+        self.assertEqual(service.travel_fee_for('전남 나주시 시연로 1', 120), ('naju', 33000))
+        self.assertEqual(service.travel_fee_for('전라남도 순천시 시연로 1', 59.9), ('jeonnam', 55000))
+        self.assertEqual(service.travel_fee_for('전라남도 순천시 시연로 1', 60), ('jeonnam', 77000))
+        self.assertEqual(service.travel_fee_for('광주광역시 시연로 1', 10), ('outside', 100000))
+        with patch.object(service.mapper, 'geocode', side_effect=lambda address: [126.8, 35.1] if '현장' in address else [126.7, 35.0]), patch.object(
+            service.mapper, 'directions', return_value={
+                'distanceMeters': 42300, 'durationSeconds': 3600, 'label': '네이버 도로 경로'
+            }
+        ):
+            response = self.client().post('/api/dispatch/travel-estimate', json={'address': '전남 순천시 현장로 2'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['distanceKm'], 42.3)
+        self.assertEqual(response.json()['travelFee'], 55000)
+        self.assertEqual(response.json()['hqAddress'], service.HQ_ADDRESS)
+
     def test_pipeline_api_failure_uses_fallback_and_private_files_stay_private(self):
         client = self.client()
         jobs = [
