@@ -26,7 +26,8 @@ mapper = Maps()
 agent_sessions = {}
 agent_session_lock = Lock()
 AGENTSTREAM_DEFAULT_BASE_URL = 'https://api-gateway.jntp-ax.or.kr/agentstream'
-AGENTSTREAM_DEFAULT_CHATBOT_ID = '4723b84d-e559-4d5a-8d0b-7de80e5764f8'
+AGENTSTREAM_DEFAULT_CHATBOT_ID = '9a6cceca-fe96-4054-864c-802b534e74ba'
+AGENTSTREAM_ENGINEER_CHATBOT_ID = 'ccc09cd1-0076-45f8-abf1-6347de17b3e2'
 VISITOR_COOKIE = 'fieldnote_visitor_id'
 HQ_ADDRESS = os.getenv('HQ_ADDRESS', '전라남도 나주시 왕곡면 혁신산단6길 9')
 HQ_COORDINATES = [
@@ -151,9 +152,9 @@ def travel_fee_for(address, distance_km):
     return 'outside', 100000
 
 
-def agentstream_settings():
+def agentstream_settings(engineer=False):
     base_url = os.getenv('AGENTSTREAM_BASE_URL', AGENTSTREAM_DEFAULT_BASE_URL).strip().rstrip('/')
-    chatbot_id = os.getenv('AGENTSTREAM_CHATBOT_ID', AGENTSTREAM_DEFAULT_CHATBOT_ID).strip()
+    chatbot_id = (AGENTSTREAM_ENGINEER_CHATBOT_ID if engineer else os.getenv('AGENTSTREAM_CHATBOT_ID', AGENTSTREAM_DEFAULT_CHATBOT_ID)).strip()
     api_key = os.getenv('AGENTSTREAM_API_KEY', '').strip()
     if not base_url or not chatbot_id or not api_key:
         raise HTTPException(503, 'AgentStream 서버 설정이 없습니다. 운영자에게 연결을 요청해 주세요.')
@@ -181,7 +182,7 @@ def agentstream_http_error(response, operation):
 
 
 def agentstream_session(visitor_id, case_id, first_message, base_url, chatbot_id, api_key):
-    key = (visitor_id, case_id)
+    key = (visitor_id, chatbot_id, case_id)
     with agent_session_lock:
         existing = agent_sessions.get(key)
     if existing:
@@ -225,7 +226,16 @@ def agentstream_session(visitor_id, case_id, first_message, base_url, chatbot_id
 
 @app.post('/api/agentstream/chat')
 def agentstream_chat(body: AgentChatBody, request: Request):
-    base_url, chatbot_id, api_key = agentstream_settings()
+    return agentstream_proxy(body, request, engineer=False)
+
+
+@app.post('/api/agentstream/engineer-chat')
+def engineer_agentstream_chat(body: AgentChatBody, request: Request):
+    return agentstream_proxy(body, request, engineer=True)
+
+
+def agentstream_proxy(body: AgentChatBody, request: Request, engineer=False):
+    base_url, chatbot_id, api_key = agentstream_settings(engineer)
     visitor_id = request.cookies.get(VISITOR_COOKIE) or uuid.uuid4().hex
     session_id, created = agentstream_session(
         visitor_id, body.caseId, body.message, base_url, chatbot_id, api_key
@@ -343,6 +353,9 @@ def full_pipeline():
 
 @app.get('/dispatch/')
 def dispatch_page():return FileResponse(ROOT/'index.html')
+
+@app.get('/engineer-help/')
+def engineer_help_page():return FileResponse(ROOT.parent/'engineer-help.html')
 
 @app.get('/')
 def fieldnote():return FileResponse(ROOT.parent/'index.html')
