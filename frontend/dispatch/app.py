@@ -298,6 +298,13 @@ def fieldnote():return FileResponse(ROOT.parent/'index.html')
 
 # An explicit file allowlist prevents .env, Python source, CSV and caches being served.
 PUBLIC={p.name:p for p in ROOT.parent.iterdir() if p.suffix in ('.js','.css') and p.is_file()}
+PUBLIC_DATA={'farmingboy_customers_100.json': ROOT.parent/'data'/'farmingboy_customers_100.json'}
+@app.get('/data/{filename}')
+def public_data(filename:str):
+    path=PUBLIC_DATA.get(filename)
+    if not path or not path.is_file(): raise HTTPException(404)
+    return FileResponse(path, media_type='application/json')
+
 @app.get('/{filename}')
 def public_file(filename:str):
     if filename not in PUBLIC:raise HTTPException(404)
