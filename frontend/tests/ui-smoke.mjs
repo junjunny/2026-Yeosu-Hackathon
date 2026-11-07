@@ -27,7 +27,7 @@ const fileOverrides={}; const NativeFormData=w.FormData;
 w.FormData=class extends NativeFormData {constructor(form){super(form);this.form=form;}getAll(name){return fileOverrides[this.form.id]?.[name]||super.getAll(name);}get(name){return fileOverrides[this.form.id]?.[name]?.[0]||super.get(name);}};
 const errors=[];w.addEventListener('error',e=>errors.push(e.error));
 const source=(await readFile(new URL('../app.js',import.meta.url),'utf8')).replace(/^import .*?;\n/gm,'');
-w.eval(source+'\nwindow.testState=state;window.testDemoCaseFromCustomer=demoCaseFromCustomer;window.testEnrichCompletedDemoEvidence=enrichCompletedDemoEvidence;window.testEngineerTimeline=engineerTimeline;');
+w.eval(source+'\nwindow.testState=state;window.testRender=render;window.testDemoCaseFromCustomer=demoCaseFromCustomer;window.testEnrichCompletedDemoEvidence=enrichCompletedDemoEvidence;window.testEngineerTimeline=engineerTimeline;');
 await new Promise(resolve=>setTimeout(resolve,10));
 assert.equal(w.testState.cases.length,0);assert.equal(w.testState.activeId,null);
 assert.deepEqual([...w.testState.staff.counselors],['상담사 A','상담사 B','상담사 C']);const demoCounselors=Array.from({length:6},(_,index)=>w.testDemoCaseFromCustomer({customer_id:`C${index}`,name:`고객${index}`,current_job:{received_at:'2026-11-01T09:00:00+09:00'}},index).counselorName);assert.deepEqual(demoCounselors,['상담사 A','상담사 B','상담사 C','상담사 A','상담사 B','상담사 C']);
@@ -88,3 +88,21 @@ for(const record of evidenceCases){assert.match(record.demoEvidenceBoard,/\.png$
 const migrated=JSON.stringify(evidenceCases);w.testEnrichCompletedDemoEvidence();assert.equal(JSON.stringify(evidenceCases),migrated);assert.equal(JSON.stringify(item()),existingRecord);
 const timeline=w.testEngineerTimeline('엔지니어 A');assert.match(timeline,/현장 작업 시작/);assert.match(timeline,/고객 최종 서명/);assert.equal((timeline.match(/류병철 · 수리 완료/g)||[]).length,1);
 console.log('PASS: 완료 데모 2건에 증상별 사진·손글씨 서명 연결 · 재실행 보존 · 고객별 오늘 작업 기록');
+
+// Accept manager approval even when the demo engineer is full; capacity applies only to assignment.
+const completedFixture=structuredClone(item());
+const makeApprovalCase=(id,assigned)=>({...structuredClone(completedFixture),id,customerName:id,stage:'awaiting-arrival',dispatch:{required:true},priorityConfirmed:true,assignedEngineer:assigned,managerApprovedAt:null,assignedAt:null,completedAt:null,fieldLog:[],receivedAt:new Date().toISOString()});
+const busyCases=Array.from({length:5},(_,i)=>makeApprovalCase('BUSY-'+i,'엔지니어 A'));
+const queued=makeApprovalCase('APPROVAL-QUEUE',null),secondQueued=makeApprovalCase('APPROVAL-QUEUE-2',null);
+w.testState.cases=[...busyCases,queued,secondQueued];w.testState.role='manager';w.testRender('top');
+await click('[data-manager-approve="APPROVAL-QUEUE"]');
+assert.ok(queued.managerApprovedAt);assert.equal(queued.assignedEngineer,null);assert.match(queued.status,/배차 대기/);
+assert.match($('[data-manager-approve="APPROVAL-QUEUE"]').closest('.manager-intake').textContent,/최종 컨펌 완료.*배차 대기/);
+const approvalTime=queued.managerApprovedAt,logCount=queued.fieldLog.length;
+await click('[data-manager-approve="APPROVAL-QUEUE"]');assert.equal(queued.managerApprovedAt,approvalTime);assert.equal(queued.fieldLog.length,logCount);
+await click('[data-manager-approve="APPROVAL-QUEUE-2"]');assert.ok(secondQueued.managerApprovedAt);assert.equal(secondQueued.assignedEngineer,null);
+busyCases[0].stage='complete';
+await click('[data-manager-approve="APPROVAL-QUEUE"]');assert.equal(queued.assignedEngineer,'엔지니어 A');assert.equal(queued.managerApprovedAt,approvalTime);
+assert.equal(w.testState.cases.filter(c=>c.assignedEngineer==='엔지니어 A'&&c.stage!=='complete').length,5);
+assert.equal(secondQueued.assignedEngineer,null);assert.deepEqual(errors,[]);
+console.log('PASS: full engineer capacity does not block manager approvals; waiting status, idempotent retry and capacity-safe handoff');
