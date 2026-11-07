@@ -92,14 +92,14 @@
     }
     function render(data){
       latest=data;const assigned=data.routes.reduce((sum,route)=>sum+route.jobs.length,0);$('total').textContent=data.inputCount;$('assigned').textContent=assigned;$('unassigned').textContent=data.unassigned.length;$('errors').textContent=data.addressErrors.length;
-      $('cards').innerHTML=data.routes.map((route,index)=>`<article class="card" style="--color:${colors[index%colors.length]}"><h2>${esc(route.technician.name)}</h2><p>전문: ${esc(route.technician.specialties.join(', '))} · ${route.jobs.length}/5건</p><span class="badge">${esc(route.label)}</span><p>${(route.distanceMeters/1000).toFixed(1)}km · 예상 이동 ${Math.ceil(route.durationSeconds/60)}분</p><ol>${route.jobs.map(job=>`<li><b>${esc(job.id)} · ${esc(job.requiredPart)} · ${esc({high:'상',normal:'중',low:'하'}[job.priority])}</b><br>${esc(job.symptom)}<br>${esc(job.address)}</li>`).join('')||'<li>배정 없음</li>'}</ol></article>`).join('');
+      $('cards').innerHTML=data.routes.map((route,index)=>`<article class="card" style="--color:${colors[index%colors.length]}"><h2>${esc(route.technician.name)}</h2><p>통합 역량 · 거리 최적화 · ${route.jobs.length}/5건</p><span class="badge">${esc(route.label)}</span><p>${(route.distanceMeters/1000).toFixed(1)}km · 예상 이동 ${Math.ceil(route.durationSeconds/60)}분</p><ol>${route.jobs.map(job=>`<li><b>${esc(job.id)} · ${esc(job.requiredPart)} · ${esc({high:'상',normal:'중',low:'하'}[job.priority])}</b><br>${esc(job.symptom)}<br>${esc(job.address)}</li>`).join('')||'<li>배정 없음</li>'}</ol></article>`).join('');
       $('issues').innerHTML=`<h3>미배정 ${data.unassigned.length}건</h3><ul>${data.unassigned.map(job=>`<li>${esc(job.id)} · ${esc(job.requiredPart)} · ${esc(job.reason)}</li>`).join('')||'<li>없음</li>'}</ul><h3>주소 확인 필요 ${data.addressErrors.length}건</h3><ul>${data.addressErrors.map(error=>`<li>${esc(error.id)} · ${esc(error.address)} · ${esc(error.reason)}</li>`).join('')||'<li>없음</li>'}</ul>`;draw(data);
     }
     $('run').addEventListener('click',async()=>{
       $('run').disabled=true;
       try{
         $('progress').textContent='① Geocoding · 캐시와 주소 확인 중…';let result=await post('geocode');
-        $('progress').textContent='② OR-Tools · 전문 파트·최대 5건·긴급도 계산 중…';result=await post('plan/'+result.runId);render(result);
+        $('progress').textContent='② OR-Tools · 통합 역량·최대 5건·거리·긴급도 계산 중…';result=await post('plan/'+result.runId);render(result);
         $('progress').textContent='③ Directions · 배정 기사별 1회 도로 경로 조회 중…';result=await post('directions/'+result.runId);render(result);
         $('progress').textContent='④ 지도 표시 완료 · '+result.planningMethod+' · 마지막 방문지에서 종료';
       }catch(error){$('progress').textContent=error.message;}finally{$('run').disabled=false;}

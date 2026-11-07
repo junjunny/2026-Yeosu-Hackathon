@@ -8,10 +8,9 @@ def solve(origin, jobs, technicians, factor=1.3, speed=40, capacity=5, seconds=2
         return {'routes': [], 'unassigned': [{**j, 'reason': '기사 없음'} for j in jobs]}
     eligible, unassigned = [], []
     for job in jobs:
-        allowed = [
-            index for index, technician in enumerate(technicians)
-            if job['requiredPart'] in technician['specialties']
-        ]
+        # This demo treats every engineer as equally capable. A technician's
+        # label is informational only; routing is optimized by distance/time.
+        allowed = list(range(len(technicians)))
         if allowed:
             eligible.append((job, allowed))
         else:

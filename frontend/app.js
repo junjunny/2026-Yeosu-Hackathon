@@ -24,7 +24,7 @@ let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = 'farmingboy-customers-100-v4';
+const DEMO_SEED_VERSION = 'farmingboy-customers-100-v5';
 const MANAGER_PASSWORD = '1234';
 
 function demoPhoto(label, index, after = false) {
@@ -33,12 +33,16 @@ function demoPhoto(label, index, after = false) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-function demoCaseFromCustomer(customer, index, assignedEngineer = null, active = false) {
+function demoCaseFromCustomer(customer, index, assignedEngineer = null, active = false, todayComplete = false) {
   const job = customer.current_job || {};
   const receivedAt = job.received_at || new Date(Date.now() - index * 86400000).toISOString();
-  const text = job.request_text || '농기계 점검과 수리를 요청합니다.';
+  const text = customer.name === '고해숙'
+    ? '충전기 출력 전압이 안 올라옵니다. 저도 장비를 잘 아는 편이라 부품을 먼저 보내주시고, 팀장님과 직접 통화하고 싶습니다.'
+    : (job.request_text || '농기계 점검과 수리를 요청합니다.');
+  const todayIntake = String(receivedAt).startsWith('2026-11-07');
   const repairMinutes = [45, 60, 75, 90, 120, 150][index % 6];
-  const completedAt = job.completed_at || new Date(Date.parse(receivedAt) + repairMinutes * 60000).toISOString();
+  const todaySlots = ['08:41:00','10:24:00','10:37:00','11:22:00','12:45:00','13:11:00','14:05:00'];
+  const completedAt = todayComplete ? `2026-11-07T${todaySlots[index % todaySlots.length]}+09:00` : (job.completed_at || new Date(Date.parse(receivedAt) + repairMinutes * 60000).toISOString());
   const arrivedAt = new Date(Date.parse(completedAt) - repairMinutes * 60000).toISOString();
   const catalogPart = defaultCatalog[index % defaultCatalog.length];
   const travelFee = [33000, 55000, 77000, 100000][index % 4];
@@ -61,22 +65,24 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null, active =
     analysis: { mode: 'demo', searchStatus: 'ok', history: [], similar: [], diagnosis: '팀장 배차용 합성 고객 기록', checklist: [], missingInfo: [], dispatch: { required: true, rule: '팀장 배차 대상', reason: '최근 30일 배차 시연 데이터' } },
     dispatch: { required: true, rule: active ? '최근 30일 배차 대상' : '최근 30일 완료 기록', reason: active ? '오늘 접수와 분리된 배차 대상' : '완료된 고객 이력' },
     erp: { productName: customer.machine?.model || '파밍보이2.0A', purchaseDate: customer.machine?.purchase_date || '확인 필요', repairHistory: customer.repair_history?.length ? `${customer.repair_history.length}건의 과거 수리 이력` : '없음', confirmedBy: '팀장 데모 데이터', confirmedAt: receivedAt },
-    assignedEngineer: completedEngineer,
-    assignedAt: completedEngineer ? receivedAt : null,
-    stage: active ? 'awaiting-arrival' : 'complete',
-    status: active ? '배차 대상 · 오늘 수리 아님' : '작업 완료',
+    assignedEngineer: todayIntake ? null : completedEngineer,
+    scheduledToday: active || todayComplete,
+    assignedAt: completedEngineer && !todayIntake ? receivedAt : null,
+    stage: active || todayIntake ? 'awaiting-arrival' : 'complete',
+    status: active ? '오늘 수리 예정' : todayIntake ? '팀장 우선순위 확인 대기' : (todayComplete ? '오늘 수리 완료' : '작업 완료'),
     priority: repeat ? 'high' : 'normal',
     priorityReason: repeat ? '최근 6개월 동일 부품 수리 이력' : '일반 접수',
-    arrivedAt: active ? null : arrivedAt,
-    completedAt: active ? null : completedAt,
-    closedAt: active ? null : completedAt,
-    onsiteMinutes: active ? null : repairMinutes,
-    repairNotes: active ? '' : `합성 완료 기록 · ${catalogPart.name} 교체 및 작동 재시험 완료`,
-    repairPlan: active ? null : { details: `현장 점검 후 ${catalogPart.name} 교체`, parts: [{ id: catalogPart.id, name: catalogPart.name, qty: 1, unitPrice: catalogPart.retailPrice + catalogPart.laborPrice, retailPrice: catalogPart.retailPrice, laborPrice: catalogPart.laborPrice }], travelFee, region: travelFee === 33000 ? 'naju' : 'jeonnam', distanceKm: travelFee === 33000 ? 12 : travelFee === 55000 ? 42 : travelFee === 77000 ? 78 : 120, catalogSource, quotedAt: completedAt },
-    beforePhotos: active ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 전 ${photoIndex + 1}`, index + photoIndex)),
-    afterPhotos: active ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 후 ${photoIndex + 1}`, index + photoIndex, true)),
-    approvalSignature: active ? null : { typedName: customer.name, signedAt: new Date(Date.parse(arrivedAt) + Math.round(repairMinutes * 0.35) * 60000).toISOString(), image: null },
-    finalSignature: active ? null : { typedName: customer.name, signedAt: completedAt, image: null },
+    arrivedAt: active || todayIntake ? null : arrivedAt,
+    completedAt: active || todayIntake ? null : completedAt,
+    closedAt: active || todayIntake ? null : completedAt,
+    onsiteMinutes: active || todayIntake ? null : repairMinutes,
+    repairNotes: active || todayIntake ? '' : `합성 완료 기록 · ${catalogPart.name} 교체 및 작동 재시험 완료`,
+    repairPlan: active || todayIntake ? null : { details: `현장 점검 후 ${catalogPart.name} 교체`, parts: [{ id: catalogPart.id, name: catalogPart.name, qty: 1, unitPrice: catalogPart.retailPrice + catalogPart.laborPrice, retailPrice: catalogPart.retailPrice, laborPrice: catalogPart.laborPrice }], travelFee, region: travelFee === 33000 ? 'naju' : 'jeonnam', distanceKm: travelFee === 33000 ? 12 : travelFee === 55000 ? 42 : travelFee === 77000 ? 78 : 120, catalogSource, quotedAt: completedAt },
+    beforePhotos: active || todayIntake ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 전 ${photoIndex + 1}`, index + photoIndex)),
+    afterPhotos: active || todayIntake ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 후 ${photoIndex + 1}`, index + photoIndex, true)),
+    approvalSignature: active || todayIntake ? null : { typedName: customer.name, signedAt: new Date(Date.parse(arrivedAt) + Math.round(repairMinutes * 0.35) * 60000).toISOString(), image: null },
+    finalSignature: active || todayIntake ? null : { typedName: customer.name, signedAt: completedAt, image: null },
+    priorityConfirmed: false,
     fieldLog: [],
     positionEvents: []
   });
@@ -102,9 +108,10 @@ async function seedFarmingboyDemo() {
   const dispatchCustomers = [...recent7.filter(customer => recent7Ids.has(customer.customer_id)), ...sorted.filter(customer => !recent7Ids.has(customer.customer_id))]
     .slice(0, engineers.length * 4);
   const assigned = new Map(dispatchCustomers.map((customer, index) => [customer.customer_id, engineers[Math.floor(index / 4)]]));
+  const todayCompletedIds = new Set(dispatchCustomers.slice(0, 7).map(customer => customer.customer_id));
   const completed = customers.filter(customer => !assigned.has(customer.customer_id));
   completed.forEach((customer, index) => assigned.set(customer.customer_id, engineers[index % engineers.length]));
-  state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null, dispatchCustomers.some(item => item.customer_id === customer.customer_id)));
+  state.cases = customers.map((customer, index) => { const isDispatch = dispatchCustomers.some(item => item.customer_id === customer.customer_id); return demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null, isDispatch && !todayCompletedIds.has(customer.customer_id), todayCompletedIds.has(customer.customer_id)); });
   state.staff = { counselors: ['상담사 A'], engineers };
   state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0]; state.role = 'counselor';
   state.routePlans = {}; state.demoSeedVersion = DEMO_SEED_VERSION;
@@ -295,6 +302,8 @@ $('#role-counselor').addEventListener('click', () => { state.role = 'counselor';
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
+  const priorityButton=event.target.closest('[data-confirm-priority]');
+  if(priorityButton){const item=state.cases.find(c=>c.id===priorityButton.dataset.confirmPriority);const select=document.querySelector(`[data-priority-case="${CSS.escape(item?.id||'')}"]`);if(item&&select){item.priority=select.value;item.priorityConfirmed=true;persist();render('top');}return;}
   const evidence=event.target.closest('[data-evidence-id]');if(evidence){state.activeId=evidence.dataset.evidenceId;state.role='engineer';const c=current();if(c?.assignedEngineer)state.selectedEngineer=c.assignedEngineer;persist();render('top');return;}
   if (event.target.id === 'open-close') { state.closeFormOpen = true; render(); }
   if (event.target.id === 'cancel-close') { state.closeFormOpen = false; render(); }
@@ -451,11 +460,13 @@ function priceImportView() {
 }
 function farmingboyManagerSummary() {
   const today=seoulDay(new Date());
+  const todayCases=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today);
   const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>='2026-10-09');
-  const dispatchCases=state.cases.filter(c=>c.assignedEngineer&&c.stage==='awaiting-arrival');
+  const dispatchCases=state.cases.filter(c=>c.scheduledToday);
   const managerQueue=state.cases.filter(c=>c.stage==='awaiting-arrival'&&!c.assignedEngineer);
-  const cards=state.staff.engineers.map(engineer=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt||c.createdAt)} · 오늘 수리 아님</small></li>`).join('')||'<li>배정된 고객 없음</li>'}</ol></article>`;}).join('');
-  return `<section class="demo-operations"><div class="manager-heading"><p>최근 30일 고객 ${recent30.length}명 · 오늘 접수는 오늘 수리로 자동 배정하지 않습니다.</p></div><div class="dashboard-stats"><article><span>오늘 접수</span><strong>${state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today).length}</strong></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong></article><article><span>오늘 배차 대상</span><strong>${dispatchCases.length}</strong><small>엔지니어 3명 × 4건</small></article></div><h3>오늘 배차 대상 · ${dispatchCases.length}명</h3><div class="route-grid">${cards}</div>${managerQueue.length?`<h3>상담 완료 · 팀장 확인/배차 대기 ${managerQueue.length}건</h3><ul class="manager-queue">${managerQueue.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong> · ${escapeHtml(c.dispatchAddress)} · 우선순위 ${priorityLabel(c.priority)}</li>`).join('')}</ul>`:''}</section>`;
+  const cards=state.staff.engineers.map(engineer=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li style="margin:0 0 14px"><strong style="display:block;font-size:13px">${escapeHtml(c.customerName)}</strong><span style="display:block;margin-top:3px;line-height:1.5">${escapeHtml(c.dispatchAddress)}</span><small style="display:block;color:#789;margin-top:3px">접수 ${seoulDay(c.receivedAt||c.createdAt)} · 오늘 수리 ${c.stage==='complete'?'완료':'예정'}</small></li>`).join('')||'<li>배정된 고객 없음</li>'}</ol></article>`;}).join('');
+  const todaySummary=todayCases.map(c=>`<article class="manager-intake card" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center"><div><strong style="display:block;font-size:13px">${escapeHtml(c.customerName)}</strong><span style="display:block;margin-top:5px;line-height:1.6">${escapeHtml(c.transcript.find(m=>m.role==='counselor')?.text||'상담 요약 없음')}</span><small style="display:block;color:#789;margin-top:5px">${escapeHtml(c.dispatchAddress)}</small></div><label>우선순위<select data-priority-case="${escapeHtml(c.id)}"><option value="high" ${c.priority==='high'?'selected':''}>상</option><option value="normal" ${c.priority==='normal'?'selected':''}>중</option><option value="low" ${c.priority==='low'?'selected':''}>하</option></select></label><button type="button" class="ghost-button" data-confirm-priority="${escapeHtml(c.id)}">${c.priorityConfirmed?'확정됨':'우선순위 확정'}</button></article>`).join('');
+  return `<section class="demo-operations"><div class="manager-heading"><p>오늘 접수 ${todayCases.length}건을 먼저 확인하고 상담사 우선순위를 확정합니다. 오늘 접수와 오늘 수리는 별도입니다.</p></div><h3>오늘 접수 상담 요약 · 팀장 확인</h3><div class="manager-intake-list">${todaySummary}</div><div class="dashboard-stats"><article><span>오늘 접수</span><strong>${todayCases.length}</strong></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong></article><article><span>오늘 수리 예약</span><strong>${dispatchCases.length}</strong><small>엔지니어 3명 × 4건</small></article></div><h3>오늘 수리 예약 동선 · ${dispatchCases.length}명</h3><div class="route-grid">${cards}</div>${managerQueue.length?`<h3>상담 완료 · 팀장 확인/배차 대기 ${managerQueue.length}건</h3><ul class="manager-queue">${managerQueue.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong> · ${escapeHtml(c.dispatchAddress)} · 우선순위 ${priorityLabel(c.priority)}</li>`).join('')}</ul>`:''}</section>`;
 }
 function managerView() {
   const {done,todo}=dashboardStats(state.cases);
