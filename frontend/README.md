@@ -1,93 +1,46 @@
-# Fieldnote · 접수부터 현장 완료까지
+# Fieldnote 해커톤 데모
 
-상담 화면은 빌드 없는 HTML/CSS/JavaScript이며, 팀장 지도 배차는 Python FastAPI + OR-Tools 데모입니다. 사용자 작업 범위는 `frontend/`이며 `AGENTS.md`, `HANDOFF.md`를 먼저 읽으세요. 실제 RAG 분석·서버 기록 저장은 미연결이며 관리자 비밀번호와 네이버 지도 서버 어댑터는 구현되어 있습니다.
+상담사 접수부터 농기계 AS 기사 배차, 현장 완료까지 한 화면에서 시연하는 프런트엔드 중심 프로토타입입니다. 브라우저 UI는 빌드 없는 HTML/CSS/JavaScript이고, 비밀키 보호와 배차 계산을 위한 FastAPI 코드도 `frontend/dispatch/` 안에 둡니다.
 
-## 실행 및 주최 측 8501 웹 주소
-
-저장소 루트에서 로컬 실행:
+## 실행
 
 ```bash
-python3 -m http.server 4173 --directory frontend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r frontend/dispatch/requirements.txt && cp -n frontend/dispatch/.env.example frontend/dispatch/.env
+uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 ```
 
-주최 측 개발환경 터미널에서 최신 작업 브랜치를 받아 실행합니다. 먼저 기존 작업을 저장하고 해당 저장소 루트로 이동하세요.
+- 상담·현장 화면: `http://localhost:8501/`
+- 배차 지도: `http://localhost:8501/dispatch/`
+- 환경 변수와 단계별 API: [dispatch/README.md](dispatch/README.md)
 
-```bash
-git fetch origin
-git switch codex/frontend-service-workflow
-python3 -m pip install -r frontend/dispatch/requirements.txt
-python3 -m uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
-```
+## 구현 흐름
 
-그 터미널의 프로세스를 유지한 채 https://devopen.jntp-ax.or.kr/i/nwa7YdKUBkelKaTn/ 에 접속합니다. 로컬 PC나 다른 서버에서 8501을 여는 것으로 해당 주최 측 URL에 연결되지는 않습니다. URL이 연결된 주최 측 컨테이너 안에서 실행해야 합니다. 다른 프로세스가 8501을 사용한다면 기존 실행 프로세스를 확인한 뒤 한 개의 서버만 실행하세요. 이번 작업 환경에서 해당 URL은 HTTP 502로 응답했으며 실제 주최 측 컨테이너에는 접속하지 않았습니다. 502의 원인은 이 응답만으로 확정할 수 없습니다.
+1. 상담사가 고객 요청을 원문에 가깝게 채팅합니다.
+2. 브라우저가 `/api/agentstream/chat`을 호출하고 FastAPI가 `.env`의 AgentStream 키로 외부 요청을 보냅니다.
+3. 통화 종료 전 ERP 정보와 방문 요청·주행 불가·자가조치 희망을 확정합니다.
+4. 팀장 화면에서 합성 CSV 접수를 전문 파트가 맞는 기사에게 배정합니다.
+5. Geocoding → OR-Tools → 기사별 Directions 5 1회 → 지도 표시 순서로 처리합니다.
+6. 기사는 체크리스트, 수리 전후 사진, 부품 견적, 수리 동의와 최종 서명을 기록합니다.
 
-기존 `python -m http.server`는 상담 UI만 제공합니다. 지도 배차와 관리자 비밀번호를 사용하려면 위 FastAPI 명령으로 실행해야 합니다. 비밀번호와 지도 키 설정, 지도 배경 인증 문제는 dispatch/README.md에 설명되어 있습니다.
+배차 계산은 Haversine×1.3과 평균 40km/h를 사용합니다. 기사당 최대 5건이고 긴급 건에 더 높은 미배정 penalty를 적용합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다. 전문 파트가 없거나 주소를 확인하지 못한 건은 별도 목록에 표시합니다.
 
-## 업무 흐름
+## 데이터와 보안
 
-역할 순서는 상담사 → 팀장 → 엔지니어입니다.
+- 지도 입력: `dispatch/data/as_requests.csv`, `dispatch/data/technicians.csv`
+- 주소 캐시: `dispatch/.private/geocoding.sqlite`
+- 비밀키: `dispatch/.env`에만 저장하며 Git과 HTTP 공개 경로에서 제외
+- 공개 저장소에는 `.env.example`만 포함
+- 상담·현장 기록은 현재 같은 브라우저의 `localStorage`에 저장
 
-1. 고객 이름(실구매자=실사용자), 등록 주소, 별도의 **출동 장소**를 입력합니다.
-2. 상담 원문을 남기고 증상별 추가 질문을 받습니다. 현재는 합성 규칙 기반 보조이며 실제 LLM이 아닙니다.
-3. 통화 종료 전 재확인에서 방문 요청·주행 불가·자가조치 희망을 확정합니다. 사고에서만 보험수리 가능 여부를, 보험수리가 가능할 때만 가입 여부를 입력합니다. 우선순위는 **상·중·하**입니다.
-4. 같은 화면에서 상담사가 ERP 조회 후 **과거 수리 이력·제품명·구입 시점**을 직접 입력합니다. 필수 항목이 모두 유효해야 통화 종료 버튼이 활성화됩니다. 이후 원문은 잠깁니다. 기존 저장 기록의 `erp-pending` 단계는 호환성을 위해 유지합니다.
-5. 팀장은 대시보드에서 오늘 완료·미완료(이월 포함), 기사별 이동 예정/작업 주소, 서명·완료 깃발 기록, 완료 수리 소요시간·견적 기준 청구액을 봅니다. 날짜는 한국 시간입니다. 수리 시간은 현장 도착부터 최종 서명 완료까지이며 과거 기록에 시각이 없으면 ‘기록 없음’입니다.
-6. 팀장 화면의 지도에서 배차 실행을 누르면 CSV 접수를 동일 역량 기사들에게 거리·시간·긴급도·하루5건 한도로 배정합니다. 모든 기사는 나주시 왕곡면 혁신산단6길9의 본사에서 출발하고 최종 방문 후 본사로 복귀합니다. 지도 CSV와 상담 브라우저 기록은 별도입니다.
-7. 배정된 기사는 도착 → 브레이크·타이어 필수 고객 중심 점검 → 수리 전 사진 여러 장 → 부품·수량 채팅 → 자동 견적 → 고객 수리 동의 서명 → 실제 수리 기록 → 수리 후 사진 여러 장 → 개인정보 안내 확인·수리 이행 확인 최종 서명을 진행합니다.
-
-현재 위치 표현은 **출동 주소에 근거한 사건 기록과 다음 목적지**입니다. 실제 GPS 좌표·주행 중 실시간 위치·지도 표시는 미연결입니다. 고객 수리 동의, 최종 서명/완료 시각을 각각 주소와 함께 기록하며 실제 GPS로 측정한 위치로 표시하지 않습니다.
-
-## 최신 지도 배차 데모
-
-최신 요청에 따라 서버에서 관리자 비밀번호(현재 시연 설정 1234)를 확인하도록 바꿨습니다. 팀장 화면에 비밀번호로 로그인하면 지도·방문 순서와 기간별 실적표를 함께 볼 수 있습니다. `/dispatch/` 직접 접속도 관리자 인증이 필요합니다. 자세한 실행 3줄과 API 단계는 [dispatch/README.md](dispatch/README.md)에 있습니다.
-
-- 샘플 입력: `dispatch/data/as_requests.csv` 20건, `technicians.csv` 기사 4명. 고객 A·B·C가 섞인 합성 데이터입니다.
-- OR-Tools CVRP가 동일 기사·하루 5건·긴급도 패널티·본사 복귀를 반영합니다. 기사들은 모두 동일 역량입니다. 전문파트 제한은 없습니다.
-- 배차 계산에는 보정 Haversine 거리·시간만 사용하고, 확정 후 기사당 Directions 5를 한 번 호출합니다. 실패 시 대체 경로를 표시합니다.
-- 키는 `dispatch/.env`에 `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`으로 설정합니다. `.env.example`만 Git에 포함합니다. Client Secret은 HTTP로 제공하지 않습니다. Client ID는 네이버 JS 지도 로딩에 필요한 공개 식별자이므로 config 응답에 포함합니다.
-- 주소 캐시는 `dispatch/.private/geocoding.sqlite`이며 Git/HTTP 제공에서 제외합니다. 지도 키 없이도 합성 좌표도·대체 경로로 데모가 가능합니다.
-- 기존 상담 화면의 **고객 A·B·C 데모 불러오기**는 별도의 브라우저 합성 사례 12개를 만듭니다. 사용자 접수는 보존하고 같은 데모 ID만 교체합니다. 지도 배차 입력은 CSV이며 브라우저 상담 기록과 자동 동기화하지 않습니다.
-- `manager-access.js`는 서버 세션을 조회합니다. 관리자 비밀번호는 dispatch/.env의 MANAGER_PASSWORD=1234이며 지도·배차 API에도 인증이 필요합니다. 본사는 전남 나주시 왕곡면 혁신산단6길9로 고정하고 복귀 구간을 포함합니다. 팀장 화면은 지도와 기사별 기간 실적표를 함께 표시합니다. 자세한 지도 콘솔 설정 및 평가 지표 설명은 dispatch/README.md에 있습니다.
-
-## 부품과 견적
-
-`parts-catalog.js`에 사용자가 제공한 파밍보이 표 **63개 부품**의 명칭·소비자가·공임·비고를 기본 등록했습니다. `AI`, `15*6,00*6` 등 원문 표기를 임의 교정하지 않았습니다. 기존 등록 가격표가 있으면 보존하며 신규/빈 가격표에 기본값을 적용합니다. 기존 확정 견적은 소급 변경하지 않습니다.
-
-한 줄에 `정확한 부품명 × 수량` 또는 부품코드를 입력합니다. 부품명 자체의 쉼표와 별표를 보존하기 위해 줄바꿈으로 항목을 구분합니다. 예: `앞타이어(휠반납조건) 15*6,00*6 × 2`. 단가는 소비자가+공임이며 수량을 곱합니다.
-
-| 출장 구분 | 출장비 |
-| --- | ---: |
-| 나주 관내 | 33,000원 |
-| 전남 내 나주 외, 60km 미만 | 55,000원 |
-| 전남 내 나주 외, 60~100km 미만 | 77,000원 |
-| 100km 이상 또는 전남 외 | 100,000원 |
-
-최종 견적 = 출장비 + Σ(수량 × (소비자가 + 공임)). 공임을 이중 청구하지 않습니다. 지도 연결 전에는 기사가 지역·거리를 확인해 입력합니다. 실제 수금 여부는 관리하지 않으므로 대시보드 비용은 견적 기준 청구액입니다.
-
-팀장 인증 후 관리 영역에서 xlsx를 읽고 시트·제목 행·부품명·소비자가·공임 열을 확인해 가격표를 교체할 수도 있습니다. ZIP/XML 읽기는 `DecompressionStream('deflate-raw')` 지원 브라우저가 필요합니다. `.xls`와 암호화 파일은 지원하지 않습니다. 빈 금액·중복 부품명·수식 결과 누락은 거부합니다.
-
-## 지도 API와 평가 참고
-
-FastAPI의 단계별 Geocoding/CVRP/Directions/지도 엔드포인트와 관리자 로그인 API는 [dispatch/README.md](dispatch/README.md)를 확인하세요. 이전 route-provider.js의 무작위 배정 어댑터는 호환 코드로만 남고 현재 지도 화면은 FastAPI CVRP를 사용합니다.
-
-기사별 실적표는 오늘/7일/30일 완료건수, 현장 경과시간, 기록 누락, 견적 청구액, 서명·사진 증빙과 근거 접수를 보여줍니다. 자동 점수·순위·연봉을 산출하지 않으며 실제 수금액·재수리율·만족도는 미수집입니다. CSV의 예정 배차를 완료 실적으로 오인하지 않습니다.
-
-## 저장과 남은 연결
-
-- `services.js`의 `replyToCounselor()`, `buildAnalysis()`를 실제 질문·분석 API로 교체합니다. 분석은 diagnosis/similar/history/checklist/missingInfo/searchStatus 계약을 유지합니다.
-- 출동 판단은 고객 방문 요청 → 주행 불가 → 정상 검색 0건 → 유사 사례+자가조치 희망 → 상담사 선택입니다. 검색 실패는 0건이 아닙니다.
-- `loadState()`/`saveState()`는 `yeosu-fieldnote-chat-v2` localStorage를 사용합니다. 사진·서명·담당자도 같은 브라우저 안에서만 공유됩니다. 서버 저장·인증·기기 간 동기화가 필요합니다.
-- 사진은 수리 전/후 각각 1~12장, 원본 20MB 이하이며 900px 이하로 축소합니다. 브라우저 저장 한도가 있습니다. 서명은 그림 또는 성명 입력을 지원합니다.
-- 개인정보 안내는 시연용이며 실제 운영 정책은 별도 확정해야 합니다. 공개 시연에는 합성 고객 정보·사진·서명만 사용하세요.
+제공된 키를 코드, README, 테스트, 커밋에 넣지 마세요. 외부 API가 실패하면 지도는 `대체 경로` 점선으로 계속 동작합니다.
 
 ## 검증
 
 ```bash
+python3 -m unittest discover -s frontend/dispatch/tests -v
 node frontend/tests/workflow.test.mjs
-npm install --prefix /tmp/fieldnote-qa --no-audit --no-fund jsdom
-FIELDNOTE_QA_PACKAGE=/tmp/fieldnote-qa/package.json node frontend/tests/ui-smoke.mjs
+node --check frontend/app.js && node --check frontend/services.js
 ```
 
-도메인 테스트 11개와 DOM 전체 흐름·엑셀 읽기/등록을 확인합니다. 실제 사진 처리·캔버스·반응형 화면은 실브라우저 확인이 필요합니다. 네이버 지도 어댑터와 FastAPI 배차가 추가되었으며 실제 키/도메인 권한 검증은 별도입니다. 인증·AI·서버 저장은 미연결입니다. tests의 xlsx는 합성 검증 파일이며 실제 가격은 사용자 제공 표를 기준으로 합니다.
-
-스킬은 `.agents/skills/`, 설치 기록은 `skills-lock.json`에 있습니다. 요청한 find-skills 설치·검색 후 기존 frontend-design 스킬을 적용해 기존 Fieldnote 화면 구성을 유지했습니다.
+AgentStream의 실제 호출 URL과 정확한 요청/응답 계약은 주최 측 설정값을 `.env`에 입력해 최종 확인해야 합니다. 현재 프록시는 `message`, `conversation_id`, `history` JSON과 Bearer 인증을 기본 계약으로 사용합니다.

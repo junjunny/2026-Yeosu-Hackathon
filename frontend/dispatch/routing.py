@@ -6,22 +6,38 @@ from .maps import haversine
 def solve(origin, jobs, technicians, factor=1.3, speed=40, capacity=5, seconds=2):
     if not technicians:
         return {'routes': [], 'unassigned': [{**j, 'reason': '기사 없음'} for j in jobs]}
-    eligible = [(job, list(range(len(technicians)))) for job in jobs]
-    unassigned = []
+    eligible, unassigned = [], []
+    for job in jobs:
+        allowed = [
+            index for index, technician in enumerate(technicians)
+            if job['requiredPart'] in technician['specialties']
+        ]
+        if allowed:
+            eligible.append((job, allowed))
+        else:
+            unassigned.append({**job, 'reason': '전문 파트가 맞는 기사 없음'})
     if not eligible:
-        return {'routes': [{'technician': t, 'jobs': []} for t in technicians], 'unassigned': []}
+        return {'routes': [{'technician': t, 'jobs': []} for t in technicians], 'unassigned': unassigned}
     points = [origin] + [job['coordinates'] for job, _ in eligible]
     matrix = [[round(haversine(a,b)*factor/(speed*1000/3600)) for b in points] for a in points]
-    # Closed CVRP: every vehicle starts and ends at the fixed headquarters.
-    n, vehicles = len(points), len(technicians)
-    manager = pywrapcp.RoutingIndexManager(n, vehicles, 0)
+    # Each vehicle starts at HQ and ends at a zero-cost virtual node after its last visit.
+    real_nodes, vehicles = len(points), len(technicians)
+    total_nodes = real_nodes + vehicles
+    manager = pywrapcp.RoutingIndexManager(
+        total_nodes,
+        vehicles,
+        [0] * vehicles,
+        list(range(real_nodes, total_nodes)),
+    )
     routing = pywrapcp.RoutingModel(manager)
     def transit(a, b):
         start, end = manager.IndexToNode(a), manager.IndexToNode(b)
+        if start >= real_nodes or end >= real_nodes:
+            return 0
         return matrix[start][end]
     callback = routing.RegisterTransitCallback(transit)
     routing.SetArcCostEvaluatorOfAllVehicles(callback)
-    demand = routing.RegisterUnaryTransitCallback(lambda index: int(0 < manager.IndexToNode(index) < n))
+    demand = routing.RegisterUnaryTransitCallback(lambda index: int(0 < manager.IndexToNode(index) < real_nodes))
     routing.AddDimensionWithVehicleCapacity(demand, 0, [capacity]*vehicles, True, 'Jobs')
     base = max(1, max(map(max, matrix)))*(len(jobs)+vehicles+1)+1
     penalties = {'high': base*(len(jobs)+1)**2, 'normal': base*(len(jobs)+1), 'low': base}
@@ -43,7 +59,7 @@ def solve(origin, jobs, technicians, factor=1.3, speed=40, capacity=5, seconds=2
         index, ordered = routing.Start(vehicle), []
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
-            if 0 < node < n:
+            if 0 < node < real_nodes:
                 job = eligible[node-1][0]
                 ordered.append(job)
                 assigned.add(job['id'])

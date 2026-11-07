@@ -4,14 +4,12 @@ import { migrateState, customerChecklist, travelFee, parseParts, estimateTotal }
 import { planBatch, routeConfig } from './route-provider.js';
 import { readPriceWorkbook, catalogFromRows } from './price-import.js';
 
-import { managerAccess } from './manager-access.js';
 import { dashboardStats, durationMinutes, closeReady } from './dashboard.js';
 
 import { technicianPerformance } from './performance.js';
 import { makeDemoCases } from './demo-cases.js';
 
 const state = migrateState(loadState());
-let managerAuthorized = false;
 let performanceDays = 30;
 let priceSheets = [];
 let priceFileName = '';
@@ -139,7 +137,7 @@ function renderDetails() {
   const item = current();
   const stages = ['상담 원문 기록', 'ERP 확인·배정', '현장 점검·견적·동의', '수리 완료·확인'];
   const step = !item || item.stage === 'counseling' ? 0 : ['awaiting-arrival','checklist','before-photos','repair-plan','customer-approval','remote-closed'].includes(item.stage) ? 2 : item.stage === 'complete' ? 4 : 3;
-  return `<div class="detail-card"><div class="detail-heading"><span class="eyebrow">접수 진행</span><h3>${item ? escapeHtml(item.id) : '새 상담 대기'}</h3><p>${item ? `${escapeHtml(item.customerName)} · ${escapeHtml(item.registeredAddress || '등록 주소 확인 필요')}` : '고객과 장비를 선택해 시작하세요.'}</p></div><div class="progress-list">${stages.map((name,i) => `<div class="progress-item ${i < step ? 'completed' : i === step ? 'current' : ''}"><span>${i < step ? '✓' : i+1}</span><strong>${escapeHtml(name)}</strong></div>`).join('')}</div></div><div class="help-card"><span aria-hidden="true">ⓘ</span><div><strong>합성 데이터 시연</strong><p>고객·사례·가격·서명은 시연용입니다. AgentStream 키와 팀 API는 아직 연결되지 않았습니다.</p></div></div>`;
+  return `<div class="detail-card"><div class="detail-heading"><span class="eyebrow">접수 진행</span><h3>${item ? escapeHtml(item.id) : '새 상담 대기'}</h3><p>${item ? `${escapeHtml(item.customerName)} · ${escapeHtml(item.registeredAddress || '등록 주소 확인 필요')}` : '고객과 장비를 선택해 시작하세요.'}</p></div><div class="progress-list">${stages.map((name,i) => `<div class="progress-item ${i < step ? 'completed' : i === step ? 'current' : ''}"><span>${i < step ? '✓' : i+1}</span><strong>${escapeHtml(name)}</strong></div>`).join('')}</div></div><div class="help-card"><span aria-hidden="true">ⓘ</span><div><strong>해커톤 시연</strong><p>상담 채팅은 서버의 AgentStream 프록시를 호출합니다. 고객·사례·가격·서명은 합성 데이터입니다.</p></div></div>`;
 }
 
 function render(scrollPosition = 'bottom') {
@@ -217,7 +215,7 @@ $('#conversation').addEventListener('click', event => {
 $('#conversation').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target;
-  if(['manager-login-form','origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) || form.classList.contains('assignment-form')) return;
+  if(['origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) || form.classList.contains('assignment-form')) return;
   const data = new FormData(form); const item = current();
   if (form.id === 'start-form') {
     const customerName=String(data.get('customerName')).trim(); const registeredAddress=String(data.get('registeredAddress')).trim();
@@ -235,7 +233,7 @@ $('#conversation').addEventListener('submit', async event => {
     const text = String(data.get('text')).trim(); if (!text) return;
     item.transcript.push(entry('counselor', text)); sending = true; item.status = '사례 확인 중'; persist(); render();
     try { item.transcript.push(entry('assistant', await replyToCounselor(item, text))); }
-    catch { item.transcript.push(entry('assistant', '사례 연결을 확인할 수 없습니다. 고객에게 안전 상태를 먼저 확인하고, 기술 답변은 확인 필요로 남겨 주세요.')); }
+    catch (error) { item.transcript.push(entry('assistant', `AgentStream 연결 실패: ${error.message || '설정을 확인해 주세요.'}\n고객의 안전 상태를 먼저 확인하고 기술 답변은 확인 필요로 남겨 주세요.`)); }
     item.status = '상담 중'; sending = false; if (persist()) render(); return;
   }
   if (form.id === 'close-form') {
@@ -353,11 +351,10 @@ function priceImportView() {
   return `<form id="catalog-map-form" class="stage-form"><h4>${escapeHtml(priceFileName)} · 열 확인</h4><label>시트<select id="price-sheet" name="sheet">${priceSheets.map((sheet,i)=>`<option value="${i}">${escapeHtml(sheet.name)}</option>`).join('')}</select></label><div id="price-mapping"></div><button class="primary-button" type="submit">가격표 확인 · 등록</button></form>`;
 }
 function managerView() {
-  if(!managerAuthorized)return `<form id="manager-login-form" class="stage-form card manager-login"><h2>팀장 전용 대시보드</h2><p>관리자 비밀번호를 입력해 주세요.</p><label>비밀번호<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label><button class="primary-button" type="submit">대시보드 로그인</button><p class="login-status" role="alert"></p></form>`;
   const {done,todo}=dashboardStats(state.cases);
   const queue=pendingCases().filter(c=>!c.assignedEngineer);
   const collecting=state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage));
-  return `<div class="manager-view"><h2>오늘의 현장 운영</h2><div class="manager-heading"><p>본사: 전남 나주시 왕곡면 혁신산단6길 9 · 모든 기사 본사 출발·복귀</p><button id="manager-logout" type="button" class="ghost-button">관리자 로그아웃</button></div><h3>상담·현장 실적 <small>저장된 상담 기록 기준</small></h3><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><section class="manager-map"><iframe title="오늘의 AS 배차 지도와 기사별 방문 순서" src="./dispatch/?embedded=1" loading="eager"></iframe></section><details class="manager-history"><summary>기사별 이동 · 위치 기록</summary><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+  return `<div class="manager-view"><h2>오늘의 현장 운영</h2><div class="manager-heading"><p>본점: 전남 나주시 왕곡면 혁신산단6길 9 · 모든 기사 본점 출발</p></div><h3>상담·현장 실적 <small>저장된 상담 기록 기준</small></h3><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><section class="manager-map"><iframe title="오늘의 AS 배차 지도와 기사별 방문 순서" src="./dispatch/?embedded=1" loading="eager"></iframe></section><details class="manager-history"><summary>기사별 이동 · 위치 기록</summary><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
 }
 function performanceView() {
   const rows=technicianPerformance(state.cases,state.staff.engineers,performanceDays);
@@ -384,15 +381,7 @@ function renderPriceMapping() {
 function updateCloseButton(){const form=$('#close-form');if(form)$('#finish-call').disabled=!closeReady(form)||sending;}
 function invalidateRoutes() { for(const [name,plan] of Object.entries(state.routePlans)){if(!state.cases.some(c=>c.assignedEngineer===name && !['complete','remote-closed'].includes(c.stage) && plan.stops.some(stop=>stop.caseId===c.id)))delete state.routePlans[name];} }
 
-$('#conversation').addEventListener('submit',async event=>{
-  if(event.target.id!=='manager-login-form')return;
-  event.preventDefault();const form=event.target,button=form.querySelector('button');button.disabled=true;
-  try{const response=await fetch(new URL('./api/manager/login',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:new FormData(form).get('password')})});if(!response.ok){const body=await response.json();throw new Error(body.detail||'로그인에 실패했습니다.');}managerAuthorized=await managerAccess();if(!managerAuthorized)throw new Error('관리자 세션을 확인해 주세요.');render('top');}
-  catch(error){form.querySelector('.login-status').textContent=error.message;}
-  finally{if(button.isConnected)button.disabled=false;}
-});
-$('#conversation').addEventListener('click',async event=>{if(event.target.id!=='manager-logout')return;await fetch(new URL('./api/manager/logout',location.href),{method:'POST'});managerAuthorized=false;render('top');});
-$('#role-manager').addEventListener('click',async()=>{managerAuthorized=await managerAccess();state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
+$('#role-manager').addEventListener('click',()=>{state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
 $('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer')state.selectedEngineer=event.target.value;persist();render('top');});
 $('#conversation').addEventListener('change',event=>{
   if(event.target.id==='performance-period'){performanceDays=Number(event.target.value);const panel=$('.performance-panel');if(panel)panel.outerHTML=performanceView();}
@@ -415,14 +404,14 @@ $('#conversation').addEventListener('input',event=>{
 });
 $('#conversation').addEventListener('click',async event=>{
   if(event.target.id!=='batch-assign' || routeBusy)return;
-  if(!await managerAccess()){managerAuthorized=false;render('top');return;}
+  if(state.role!=='manager')return;
   if(!$('#batch-ready')?.checked || state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage)))return;
   const cases=structuredClone(pendingCases().filter(c=>!c.assignedEngineer)),origin=state.originAddress,engineers=availableEngineers();
   const button=event.target;routeBusy=true;button.disabled=true;
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
   try {
     const plans=await planBatch(origin,cases,engineers,{signal:controller.signal});
-    if(state.role!=='manager' || !await managerAccess())throw new Error('팀장 인증을 다시 확인해 주세요.');
+    if(state.role!=='manager')throw new Error('팀장 화면에서 다시 실행해 주세요.');
     if(JSON.stringify(cases)!==JSON.stringify(pendingCases().filter(c=>!c.assignedEngineer))||origin!==state.originAddress||JSON.stringify(engineers)!==JSON.stringify(availableEngineers())||state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage)))throw new Error('접수나 출발지가 변경되었습니다. 다시 계산해 주세요.');
     const previous=structuredClone(state);
     for(const plan of plans){state.routePlans[plan.engineer]=plan;for(const stop of plan.stops){const item=state.cases.find(c=>c.id===stop.caseId);item.assignedEngineer=plan.engineer;item.assignedAt=new Date().toISOString();item.status='출동 배정 완료';}}
@@ -435,7 +424,7 @@ $('#conversation').addEventListener('submit',async event=>{
   const form=event.target;
   if(!['origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) && !form.classList.contains('assignment-form'))return;
   event.preventDefault();
-  if(state.role!=='manager' || !await managerAccess()){managerAuthorized=false;render('top');return;}
+  if(state.role!=='manager')return;
   const data=new FormData(form);
   try {
     if(form.id==='origin-form') {state.originAddress=String(data.get('originAddress')).trim();invalidateRoutes();}
@@ -463,6 +452,3 @@ $('#conversation').addEventListener('submit',async event=>{
 
 render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
 renderPriceMapping();
-
-
-if(state.role==='manager')managerAccess().then(allowed=>{managerAuthorized=allowed;render('top');});

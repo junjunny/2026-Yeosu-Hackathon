@@ -2,21 +2,17 @@ import csv
 import json
 import os
 import uuid
-import secrets
-import hmac
-import time
-from collections import defaultdict
-from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from threading import Lock
 from pydantic import BaseModel, Field
+import httpx
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / '.env')
@@ -27,59 +23,11 @@ app = FastAPI(title='Fieldnote 배차 데모')
 runs = {}
 run_lock = Lock()
 mapper = Maps()
-HQ_ADDRESS = '전라남도 나주시 왕곡면 혁신산단6길 9'
-HQ_COORDINATES = [126.6928956, 34.969903]
-sessions = {}
-login_attempts = defaultdict(list)
-
-def session_for(request):
-    token=request.cookies.get('fieldnote_manager', '')
-    if sessions.get(token, 0) <= time.time():
-        sessions.pop(token, None)
-        return False
-    return True
-
-def require_manager(request: Request):
-    if not session_for(request):
-        raise HTTPException(401, '관리자 비밀번호로 로그인해 주세요.')
-
-class LoginBody(BaseModel):
-    password: str = Field(min_length=1, max_length=128)
-
-@app.post('/api/manager/login')
-def manager_login(body: LoginBody, request: Request, response: Response):
-    origin=request.headers.get('origin')
-    if request.headers.get('sec-fetch-site')=='cross-site':
-        raise HTTPException(403, '같은 사이트에서 로그인해 주세요.')
-    if origin and urlparse(origin).netloc not in {request.headers.get('host'), request.headers.get('x-forwarded-host')}:
-        raise HTTPException(403, '접속 주소를 확인해 주세요.')
-    ip=request.client.host if request.client else 'unknown'
-    now=time.time()
-    login_attempts[ip]=[stamp for stamp in login_attempts[ip] if now-stamp<60]
-    if len(login_attempts[ip])>=5:raise HTTPException(429,'1분 후 다시 시도해 주세요.')
-    configured=os.getenv('MANAGER_PASSWORD','')
-    if not configured:raise HTTPException(503,'서버 관리자 비밀번호를 설정해 주세요.')
-    login_attempts[ip].append(now)
-    if not hmac.compare_digest(body.password.encode(), configured.encode()):raise HTTPException(401,'관리자 비밀번호가 맞지 않습니다.')
-    login_attempts[ip]=[]
-    for token,expiry in list(sessions.items()):
-        if expiry<=now:sessions.pop(token,None)
-    token=secrets.token_urlsafe(32)
-    sessions[token]=now+8*3600
-    response.set_cookie('fieldnote_manager',token,httponly=True,samesite='strict',max_age=8*3600,secure=request.url.scheme=='https')
-    return {'authenticated':True,'role':'manager'}
-
-@app.get('/api/manager/session')
-def manager_session(request: Request):
-    return {'authenticated':session_for(request),'role':'manager' if session_for(request) else None}
-
-@app.post('/api/manager/logout')
-def manager_logout(request: Request,response: Response):
-    sessions.pop(request.cookies.get('fieldnote_manager',''),None)
-    response.delete_cookie('fieldnote_manager')
-    return {'authenticated':False}
-
-
+HQ_ADDRESS = os.getenv('HQ_ADDRESS', '전라남도 나주시 왕곡면 혁신산단6길 9')
+HQ_COORDINATES = [
+    float(os.getenv('HQ_LNG', '126.6928956')),
+    float(os.getenv('HQ_LAT', '34.969903')),
+]
 
 def load_data():
     with (ROOT/'data/as_requests.csv').open(encoding='utf-8-sig') as file:
@@ -90,7 +38,14 @@ def load_data():
         raise HTTPException(422, '접수 100건·기사 20명 이하로 입력해 주세요.')
     today = datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
     jobs = [{'id':r['접수ID'], 'date':r['접수일'], 'address':r['주소'], 'model':r['모델'], 'symptom':r['증상(고객 말)'], 'requiredPart':r['필요파트'], 'priority':{'상':'high','중':'normal','하':'low'}.get(r['긴급도'],'normal')} for r in rows if r['접수일']<=today]
-    technicians = [{'id':t['기사ID'], 'name':t['이름'], 'specialties':[]} for t in techs]
+    technicians = [
+        {
+            'id': t['기사ID'],
+            'name': t['이름'],
+            'specialties': [part.strip() for part in t['전문파트'].split('|') if part.strip()],
+        }
+        for t in techs
+    ]
     if len({j['id'] for j in jobs})!=len(jobs) or len({t['id'] for t in technicians})!=len(technicians):
         raise HTTPException(422, '접수/기사 ID가 중복되었습니다.')
     return jobs, technicians
@@ -105,7 +60,7 @@ def geocode_stage():
     try:
         headquarters['coordinates']=mapper.geocode(address)
     except Exception:
-        headquarters.update(coordinates=HQ_COORDINATES,fallback=False)
+        headquarters.update(coordinates=HQ_COORDINATES,fallback=True)
         headquarters['cachedFixedCoordinates']=True
         errors.append({'id':'HQ','address':address,'reason':'본점 주소 확인 필요 · API 연결/권한 확인'})
     addresses=list(dict.fromkeys(j['address'] for j in jobs))
@@ -158,12 +113,69 @@ def directions_stage(data):
     return {**data,'routes':routes,'stage':'finished'}
 
 
+class AgentChatBody(BaseModel):
+    caseId: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[dict] = Field(default_factory=list, max_length=40)
+
+
+def agentstream_text(payload):
+    if isinstance(payload, str):
+        return payload.strip()
+    if not isinstance(payload, dict):
+        return ''
+    for key in ('reply', 'answer', 'output', 'content', 'message', 'text'):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = agentstream_text(value)
+            if nested:
+                return nested
+    choices = payload.get('choices')
+    if isinstance(choices, list) and choices:
+        return agentstream_text(choices[0])
+    data = payload.get('data')
+    return agentstream_text(data)
+
+
+@app.post('/api/agentstream/chat')
+def agentstream_chat(body: AgentChatBody):
+    url = os.getenv('AGENTSTREAM_URL', '').strip()
+    api_key = os.getenv('AGENTSTREAM_API_KEY', '').strip()
+    if not url or not api_key:
+        raise HTTPException(503, 'AgentStream URL과 API 키를 .env에 설정해 주세요.')
+    header_name = os.getenv('AGENTSTREAM_AUTH_HEADER', 'Authorization').strip()
+    scheme = os.getenv('AGENTSTREAM_AUTH_SCHEME', 'Bearer').strip()
+    auth_value = f'{scheme} {api_key}'.strip()
+    request_body = {
+        'message': body.message,
+        'conversation_id': body.caseId,
+        'history': body.history[-20:],
+    }
+    try:
+        response = httpx.post(
+            url,
+            json=request_body,
+            headers={header_name: auth_value, 'Accept': 'application/json'},
+            timeout=30,
+            follow_redirects=False,
+        )
+        response.raise_for_status()
+        reply = agentstream_text(response.json())
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(502, 'AgentStream 호출에 실패했습니다.') from error
+    if not reply:
+        raise HTTPException(502, 'AgentStream 응답에서 답변 텍스트를 찾지 못했습니다.')
+    return {'reply': reply, 'provider': 'agentstream'}
+
+
 @app.get('/api/dispatch/config')
-def config(authorized=Depends(require_manager)):
+def config():
     return {'clientId':os.getenv('NCP_CLIENT_ID',''),'hqAddress':HQ_ADDRESS,'hqCoordinates':HQ_COORDINATES,'demo':True}
 
 @app.post('/api/dispatch/geocode')
-def geocode_api(authorized=Depends(require_manager)):
+def geocode_api():
     data=geocode_stage();ident=uuid.uuid4().hex
     if len(runs)>=32:runs.pop(next(iter(runs)))
     runs[ident]=data
@@ -175,24 +187,24 @@ def run(ident):
     return runs[ident]
 
 @app.post('/api/dispatch/plan/{ident}')
-def plan_api(ident:str, authorized=Depends(require_manager)):
+def plan_api(ident:str):
     with run_lock:
         data=run(ident)
         if data.get('stage') not in ('planned','finished'):runs[ident]=plan_stage(data)
         return {**runs[ident],'runId':ident}
 
 @app.post('/api/dispatch/directions/{ident}')
-def directions_api(ident:str, authorized=Depends(require_manager)):
+def directions_api(ident:str):
     with run_lock:
         runs[ident]=directions_stage(run(ident))
         return {**runs[ident],'runId':ident}
 
 @app.post('/api/dispatch/run')
-def full_pipeline(authorized=Depends(require_manager)):
+def full_pipeline():
     return directions_stage(plan_stage(geocode_stage()))
 
 @app.get('/dispatch/')
-def dispatch_page(request: Request):return FileResponse(ROOT/('index.html' if session_for(request) else 'login.html'))
+def dispatch_page():return FileResponse(ROOT/'index.html')
 
 @app.get('/')
 def fieldnote():return FileResponse(ROOT.parent/'index.html')

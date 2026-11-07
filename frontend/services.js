@@ -65,11 +65,24 @@ export function createCase(customerId, equipmentId) {
   };
 }
 
-// Replace only these two functions with team backend calls. Never put AgentStream keys in frontend code.
 export async function replyToCounselor(item, rawText) {
-  const match = findSimilar(item.transcript.filter(m => m.role === 'counselor').map(m => m.text).join('\n'))[0];
-  const questions = followUpQuestions(item);
-  return `${match ? `참고 사례: ${match.title} (${match.source}, 합성 데모)\n` : '증상을 구체화할 수 있도록 고객에게 다음 질문을 해 주세요.\n'}${questions.map((q,i)=>`${i+1}. ${q}`).join('\n')}\n고객 답변을 원문으로 남겨 주세요. 이 질문은 합성 규칙 기반 상담 보조이며 확정 진단은 현장 점검이 필요합니다.`;
+  const history = item.transcript.slice(-20).map(message => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: String(message.text || '')
+  }));
+  const response = await fetch('./api/agentstream/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caseId: item.id, message: rawText, history }),
+    signal: AbortSignal.timeout(35000)
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.detail || 'AgentStream 상담 연결 실패');
+  }
+  const result = await response.json();
+  if (!result.reply) throw new Error('AgentStream 답변 없음');
+  return result.reply;
 }
 
 export async function buildAnalysis(item, previousCases, flags, manualChoice) {
