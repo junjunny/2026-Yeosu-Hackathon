@@ -23,7 +23,7 @@ let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = 'farmingboy-customers-100-v1';
+const DEMO_SEED_VERSION = 'farmingboy-customers-100-v2';
 
 function demoCaseFromCustomer(customer, index, assignedEngineer = null) {
   const job = customer.current_job || {};
@@ -67,8 +67,15 @@ async function seedFarmingboyDemo() {
   const customers = Array.isArray(payload.customers) ? payload.customers : [];
   const today = seoulDay(new Date(`${payload._meta?.base_date || '2026-11-07'}T00:00:00+09:00`));
   const engineers = ['엔지니어 A', '엔지니어 B', '엔지니어 C'];
-  const dispatchCustomers = customers.filter(customer => seoulDay(customer.current_job?.received_at || '') !== today)
-    .sort((a, b) => String(b.current_job?.received_at || '').localeCompare(String(a.current_job?.received_at || '')))
+  const sorted = customers.filter(customer => seoulDay(customer.current_job?.received_at || '') !== today)
+    .sort((a, b) => String(b.current_job?.received_at || '').localeCompare(String(a.current_job?.received_at || '')));
+  const baseMs = Date.parse(`${today}T00:00:00+09:00`);
+  const recent7 = sorted.filter(customer => {
+    const receivedMs = Date.parse(customer.current_job?.received_at || '');
+    return Number.isFinite(receivedMs) && baseMs - receivedMs <= 7 * 86400000;
+  });
+  const recent7Ids = new Set(recent7.slice(0, 6).map(customer => customer.customer_id));
+  const dispatchCustomers = [...recent7.filter(customer => recent7Ids.has(customer.customer_id)), ...sorted.filter(customer => !recent7Ids.has(customer.customer_id))]
     .slice(0, engineers.length * 4);
   const assigned = new Map(dispatchCustomers.map((customer, index) => [customer.customer_id, engineers[Math.floor(index / 4)]]));
   state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null));
