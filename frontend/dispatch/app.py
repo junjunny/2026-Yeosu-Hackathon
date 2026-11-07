@@ -16,7 +16,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / '.env')
-from .maps import Maps, fallback_route
+from .maps import Maps, fallback_route, haversine
 from .routing import solve
 
 app = FastAPI(title='Fieldnote 배차 데모')
@@ -136,6 +136,19 @@ class AgentChatBody(BaseModel):
     caseId: str = Field(min_length=1, max_length=100)
     message: str = Field(min_length=1, max_length=4000)
     history: list[dict] = Field(default_factory=list, max_length=40)
+
+
+class TravelEstimateBody(BaseModel):
+    address: str = Field(min_length=3, max_length=300)
+
+
+def travel_fee_for(address, distance_km):
+    compact = ''.join(address.split())
+    if '나주시' in compact:
+        return 'naju', 33000
+    if any(token in compact for token in ('전라남도', '전남', '전남광주통합특별시')):
+        return 'jeonnam', 55000 if distance_km < 60 else 77000 if distance_km < 100 else 100000
+    return 'outside', 100000
 
 
 def agentstream_settings():
@@ -260,6 +273,44 @@ def agentstream_chat(body: AgentChatBody, request: Request):
 @app.get('/api/dispatch/config')
 def config():
     return {'clientId':os.getenv('NCP_CLIENT_ID',''),'hqAddress':HQ_ADDRESS,'hqCoordinates':HQ_COORDINATES,'demo':True}
+
+
+@app.post('/api/dispatch/travel-estimate')
+def travel_estimate(body: TravelEstimateBody):
+    address = body.address.strip()
+    try:
+        destination = mapper.geocode(address)
+    except Exception as error:
+        raise HTTPException(422, '출동 주소를 지도에서 하나로 확인할 수 없습니다.') from error
+    try:
+        origin = mapper.geocode(HQ_ADDRESS)
+        hq_source = '본사 주소 지오코딩'
+    except Exception:
+        origin = HQ_COORDINATES
+        hq_source = '저장된 본사 좌표'
+    try:
+        route = mapper.directions(origin, [destination])
+        distance_meters = route['distanceMeters']
+        duration_seconds = route['durationSeconds']
+        source = route['label']
+    except Exception:
+        factor, speed, _, _ = settings()
+        distance_meters = haversine(origin, destination) * factor
+        duration_seconds = distance_meters / (speed * 1000 / 3600)
+        source = f'대체 거리 · 보정 직선거리 ×{factor}'
+    distance_km = round(distance_meters / 1000, 1)
+    region, fee = travel_fee_for(address, distance_km)
+    return {
+        'hqAddress': HQ_ADDRESS,
+        'dispatchAddress': address,
+        'distanceKm': distance_km,
+        'distanceMeters': round(distance_meters),
+        'durationMinutes': max(1, round(duration_seconds / 60)),
+        'region': region,
+        'travelFee': fee,
+        'source': source,
+        'hqSource': hq_source,
+    }
 
 @app.post('/api/dispatch/geocode')
 def geocode_api():
