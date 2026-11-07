@@ -29,6 +29,20 @@ HQ_COORDINATES = [
     float(os.getenv('HQ_LAT', '34.969903')),
 ]
 
+
+@app.middleware('http')
+async def strip_deployment_base_path(request, call_next):
+    """Allow path-based gateways to forward their public prefix unchanged."""
+    base_path = '/' + os.getenv('APP_BASE_PATH', '').strip('/')
+    if base_path != '/' and (
+        request.scope['path'] == base_path
+        or request.scope['path'].startswith(base_path + '/')
+    ):
+        path = request.scope['path'][len(base_path):] or '/'
+        request.scope['path'] = path
+        request.scope['raw_path'] = path.encode('utf-8')
+    return await call_next(request)
+
 def load_data():
     with (ROOT/'data/as_requests.csv').open(encoding='utf-8-sig') as file:
         rows = list(csv.DictReader(file))

@@ -91,6 +91,14 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(config.status_code, 200)
         self.assertNotIn('secret', config.text.lower())
 
+    def test_path_gateway_prefix_is_stripped_without_breaking_local_routes(self):
+        prefix = '/i/team-service'
+        with patch.dict(os.environ, {'APP_BASE_PATH': prefix}):
+            self.assertEqual(self.client().get(prefix + '/').status_code, 200)
+            self.assertEqual(self.client().get(prefix + '/dispatch/').status_code, 200)
+            self.assertEqual(self.client().get(prefix + '/api/dispatch/config').status_code, 200)
+            self.assertEqual(self.client().get('/').status_code, 200)
+
     def test_failed_real_address_is_not_invented(self):
         with patch.object(service, 'load_data', return_value=([{'id': 'REAL-1', 'address': '확인 안 된 주소'}], [])), patch.object(
             service.mapper, 'geocode', side_effect=RuntimeError()
