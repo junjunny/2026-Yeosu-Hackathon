@@ -35,6 +35,12 @@ try{
  for(const input of await engineer.locator('[name=afterPhotos]').all())await input.setInputFiles(image);await engineer.locator('#photos-form button[type=submit]').click();await ready(engineer);await sign('#verification-form');
  await manager.waitForFunction(id=>JSON.parse(localStorage.getItem('yeosu-fieldnote-chat-v2')).cases.find(c=>c.id===id)?.stage==='complete',id);
  const done=(await cache(manager)).cases.find(c=>c.id===id);assert.equal(done.beforePhotos.length,5);assert.equal(done.afterPhotos.length,5);for(const url of [...done.beforePhotos,...done.afterPhotos,done.approvalSignature.image,done.finalSignature.image]){assert.match(url,/^\.\/api\/records\/media\//);assert.equal((await manager.request.get(new URL(url,base).href)).status(),200);}
+ const preview='/data/Documents/Codex/.runtime/fieldnote/export-preview/';
+ const pdfEvent=engineer.waitForEvent('download');await engineer.locator('[data-report=pdf]').click();const pdf=await pdfEvent;assert.match(pdf.suggestedFilename(),/\.pdf$/);await pdf.saveAs(preview+'workflow-verification.pdf');
+ await manager.setViewportSize({width:320,height:900});
+ const excelEvent=manager.waitForEvent('download');await manager.locator('[data-report=xlsx]').click();const excel=await excelEvent;assert.match(excel.suggestedFilename(),/\.xlsx$/);await excel.saveAs(preview+'workflow-verification.xlsx');
+ assert.equal(await manager.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ console.log('PASS: completed record PDF on 390px engineer; latest cumulative Excel on 320px manager');
  const fresh=await page(768);assert.equal((await cache(fresh)).cases.find(c=>c.id===id).stage,'complete');
  assert.deepEqual(errors,[]);
  console.log('PASS: three isolated devices, counselor → manager approval → engineer complete, 5+5 photos, drawn signatures, fresh-browser read');console.log(JSON.stringify({id}));

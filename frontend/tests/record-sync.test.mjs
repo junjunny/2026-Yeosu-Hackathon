@@ -44,3 +44,8 @@ test('remote refresh defers an actively edited case and never silently overwrite
 test('legacy import keeps old browser data and daily demo defaults are never auto-uploaded',async()=>{
  const db=server(),a=client({cases:[record(),{...record('FARMINGBOY-CUS-001'),demoDay:'2026-11-08'}]});try{await a.sync.start();assert.ok(db.records.has('REAL-1'));assert.equal(db.records.has('FARMINGBOY-CUS-001'),false);a.state.cases.find(c=>c.id.startsWith('FARMINGBOY')).stage='complete';await a.sync.refresh();assert.ok(db.records.has('FARMINGBOY-CUS-001'));}finally{a.sync.stop();}
 });
+
+test('report download waits for committed record and rejects unsaved offline changes',async()=>{
+ const s=server(),{state,sync}=client();
+ try{await sync.start();state.cases.push({id:'REPORT-TEST',stage:'complete'});sync.schedule();await sync.ensureSaved();assert.equal(s.records.get('REPORT-TEST').stage,'complete');s.offline=true;state.cases.at(-1).repairNotes='unsaved';sync.schedule();await assert.rejects(()=>sync.ensureSaved(),/저장되지/);}finally{sync.stop();}
+});

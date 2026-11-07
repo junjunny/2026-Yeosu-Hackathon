@@ -1,0 +1,2 @@
+# PDF text/content assertions; not needed by the production service.
+pypdf==6.6.0

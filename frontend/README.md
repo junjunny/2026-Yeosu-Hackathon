@@ -72,3 +72,32 @@ node --check frontend/app.js && node --check frontend/services.js
 ```
 
 AgentStream은 서버에서 X-API-Key 인증으로 health 확인 → 세션 생성 → 메시지 스트리밍을 호출합니다. 실제 연결 설정은 `dispatch/.env`에만 둡니다.
+
+
+## 누적 이력 엑셀 · 고객용 PDF (2026-11-08)
+
+- 팀장 화면의 **누적 수리 이력 → 최신 누적 이력 엑셀 다운로드**: 서버의 전체 완료 기록을 `.xlsx`로 생성합니다. 기본 합성 고객 이력 뒤에 직접 접수하고 수리를 완료한 고객이 들어갑니다. 미완료·원격 종료는 제외하며 접수 ID로 중복을 방지합니다.
+- `누적 수리 이력`, `사용 부품 상세`, `읽어 주세요` 시트로 나누고 금액은 계산 가능한 숫자로 저장합니다. 부품 단가는 공임 포함이며 별도 공임을 중복 합산하지 않습니다. 고객 입력을 엑셀 수식으로 실행하지 않습니다.
+- 엔지니어 **현장 완료 보고 → 수리 완료 안내서 PDF**: 고객·제품·주소, 접수 증상, 점검·수리 결과, 부품 수량·비용, 출장비, 도착·완료 시각, 두 서명과 전후 최대 5장씩을 담습니다. 한글 글꼴을 포함한 A4 문서로 생성합니다. 합성 데모는 명시하고 없는 증빙은 지어내지 않습니다.
+- 버튼은 서버 저장 완료를 기다립니다. 미저장·동시 수정 충돌 시 다운로드하지 않고 안내합니다. 파일은 매번 최신 서버 스냅샷에서 생성하며 **이미 다운로드한 파일 자체가 자동 변경되지는 않습니다**. 고객에게 자동 발송하지 않습니다.
+- 원본 상담·수리 기록은 `/data/Documents/Codex/.runtime/fieldnote/data/records.sqlite3`, 사진·서명은 같은 폴더의 `media/`에 유지합니다. 파일 다운로드는 메모리에서 생성하므로 서버에 오래된 사본을 쌓지 않습니다. 휴대폰에 내려받은 파일은 해당 기기의 다운로드 목록/파일 앱에 저장됩니다.
+- 기본 데모는 화면과 동일한 날짜 이동·배정·부품 기준으로 서버에서도 구성합니다. 실제 입력 기록은 SQLite의 전체 누적 이력을 사용하고, 같은 ID의 저장된 데모 수정본은 기본값보다 우선합니다. `report-demo-smoke.mjs`가 화면/내보내기 일치를 검증합니다.
+- 상담사 AgentStream은 **테스트_**, ID `4723b84d-e559-4d5a-8d0b-7de80e5764f8`로 변경했습니다. 엔지니어 Help ID와 API 키는 유지합니다. 키는 `frontend/dispatch/.env`에만 둡니다.
+
+PDF 서버 의존성 (Ubuntu, 기존 runit/8501 유지):
+
+```bash
+sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-noto-cjk
+/data/.venvs/2026-Yeosu-Hackathon/bin/pip install -r frontend/dispatch/requirements.txt
+sudo sv -w 20 restart /etc/service/fieldnote
+```
+
+검증:
+
+```bash
+pip install -r frontend/dispatch/tests/requirements.txt
+python -m unittest discover -s frontend/dispatch/tests -q
+FIELDNOTE_PYTHON=/data/.venvs/2026-Yeosu-Hackathon/bin/python FIELDNOTE_QA_PACKAGE=/tmp/fieldnote-qa/package.json node --experimental-default-type=module frontend/tests/report-demo-smoke.mjs
+```
+
+`shared-records-smoke.mjs`는 3개 브라우저 컨텍스트의 상담→팀장 확정→기사 수리·서명과 모바일 PDF/엑셀 다운로드를 검증합니다. 명시적 `FIELDNOTE_E2E_WRITE=1`이 필요하며 출력된 테스트 ID만 정리해야 합니다. 실제 고객 기록을 일괄 삭제하면 안 됩니다. Chromium 화면 크기 검증은 실제 iOS 기기 검증을 대체하지 않습니다.

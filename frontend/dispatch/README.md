@@ -42,3 +42,13 @@ node --check frontend/app.js && node --check frontend/services.js
 ```
 
 `.env`, Geocoding SQLite 캐시, Python 소스, CSV는 FastAPI의 공개 파일 경로에서 제공하지 않습니다.
+
+
+## 완료 기록 내보내기
+
+- `GET /api/reports/repairs.xlsx`: 최신 서버 완료 이력과 기본 합성 이력을 합친 실제 Excel 통합 문서.
+- `GET /api/reports/repairs/{case_id}.pdf`: 저장된 완료 고객의 안내서. 미완료/없는 ID는 404.
+- 응답은 `Cache-Control: private, no-store`와 UTF-8 다운로드 파일명을 사용합니다.
+- PDF는 저장소의 해시 파일명 이미지와 명시적으로 허용한 합성 증빙만 읽습니다. 입력된 외부 URL·로컬 경로를 따라가지 않습니다.
+- 이 프로젝트의 로그인 없는 공유 데모 접근 방식은 그대로입니다. 문서 다운로드가 별도의 실제 운영 권한 체계를 제공하지는 않습니다.
+- 설치/사용/저장 경로는 상위 README의 누적 이력 엑셀·고객용 PDF 안내를 따릅니다.

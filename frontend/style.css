@@ -221,3 +221,8 @@ input[type=file] { max-width: 100%; min-width: 0; }
 .shared-storage-status[data-kind=error],.shared-storage-status[data-kind=conflict]{background:#fff1db;color:#8e5721}
 .shared-storage-status button{border:1px solid currentColor;border-radius:6px;background:#fff;color:inherit;min-height:32px;padding:5px 10px;white-space:nowrap}
 @media(max-width:700px){.shared-storage-status{justify-content:space-between;padding:8px 14px;font-size:12px}.shared-storage-status button{min-height:44px}}
+
+/* Download controls remain readable and tappable on narrow screens. */
+.report-download{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:20px;margin:16px 0;background:#f0f5ff;border:1px solid #d6e2f5;border-radius:14px;min-width:0}
+.report-download>div{flex:1 1 260px;min-width:0}.report-download h3,.report-download h4{margin:0 0 8px}.report-download p{margin:0;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}.report-download button{min-height:48px;white-space:normal;word-break:keep-all;max-width:100%}.report-status{flex-basis:100%;font-size:13px;color:#314b72}.report-status:empty{display:none}
+@media(max-width:600px){.report-download{padding:16px}.report-download button{width:100%}}

@@ -114,6 +114,15 @@ export function createRecordSync({state,onStatus=()=>{},onRemote=()=>{},isEditin
       clearTimeout(debounce);debounce=setTimeout(flush,150);
     },
     refresh,
+    async ensureSaved(){
+      clearTimeout(debounce);
+      const deadline=Date.now()+25000;
+      while(busy&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+      if(conflicts)throw new Error('동시 수정된 기록을 먼저 확인해 주세요.');
+      if(busy||stopped)throw new Error('서버 저장 완료 후 다시 다운로드해 주세요.');
+      await flush();
+      if(hasPending())throw new Error('아직 서버에 저장되지 않았습니다. 연결 상태를 확인한 후 다시 다운로드해 주세요.');
+    },
     async useServer(){
       if(busy)return;
       if(!ready){await flush();return;}

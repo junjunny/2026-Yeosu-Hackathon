@@ -19,6 +19,7 @@ load_dotenv(ROOT / '.env')
 from .maps import Maps, fallback_route, haversine
 from .routing import solve
 from .records import RecordStore, MEDIA
+from .reports import completed_records, excel_bytes, download, repair_pdf
 from starlette.concurrency import run_in_threadpool
 
 app = FastAPI(title='Fieldnote 배차 데모')
@@ -29,6 +30,19 @@ record_store = RecordStore(os.getenv('FIELDNOTE_DATA_DIR', '/data/Documents/Code
 def shared_records(since: int | None = None):
     from fastapi.responses import JSONResponse
     return JSONResponse(record_store.snapshot(since), headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/reports/repairs.xlsx')
+def repair_history_excel():
+    from .records import today
+    return download(excel_bytes(completed_records(record_store)),
+                    f'누적수리이력_{today()}.xlsx',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.get('/api/reports/repairs/{case_id}.pdf')
+def customer_repair_pdf(case_id: str):
+    return repair_pdf(record_store, case_id)
 
 
 async def record_body(request):
@@ -72,7 +86,7 @@ mapper = Maps()
 agent_sessions = {}
 agent_session_lock = Lock()
 AGENTSTREAM_DEFAULT_BASE_URL = 'https://api-gateway.jntp-ax.or.kr/agentstream'
-AGENTSTREAM_DEFAULT_CHATBOT_ID = '9a6cceca-fe96-4054-864c-802b534e74ba'
+AGENTSTREAM_DEFAULT_CHATBOT_ID = '4723b84d-e559-4d5a-8d0b-7de80e5764f8'
 AGENTSTREAM_ENGINEER_CHATBOT_ID = 'ccc09cd1-0076-45f8-abf1-6347de17b3e2'
 VISITOR_COOKIE = 'fieldnote_visitor_id'
 HQ_ADDRESS = os.getenv('HQ_ADDRESS', '전라남도 나주시 왕곡면 혁신산단6길 9')

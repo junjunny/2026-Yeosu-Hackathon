@@ -315,7 +315,7 @@ function stageForm(item) {
     case 'final-verification':
       return `${photoGallery(item)}${signatureForm('verification', '고객에게 개인정보 처리 내역을 안내하고 요청한 수리 이행 여부를 확인해 주세요.', '요청하신 수리를 잘 이행하였음을 확인했습니다.')}`;
     case 'complete':
-      return `<div class="completion-card card"><div class="card-title"><span class="step-index done">✓</span><div><h3>현장 완료 보고</h3><p>${date(item.completedAt)} · 수리 동의 및 수리 이행 확인 서명 저장</p></div></div>${quoteCard(item)}<p><b>실제 수리</b> ${escapeHtml(item.repairNotes)}</p>${photoGallery(item)}<div class="signature-receipts">${signatureReceipt(item.approvalSignature, '수리 진행 동의')}${signatureReceipt(item.finalSignature, '수리 이행 확인')}</div></div>`;
+      return `<div class="completion-card card"><div class="card-title"><span class="step-index done">✓</span><div><h3>현장 완료 보고</h3><p>${date(item.completedAt)} · 수리 동의 및 수리 이행 확인 서명 저장</p></div></div>${quoteCard(item)}<p><b>실제 수리</b> ${escapeHtml(item.repairNotes)}</p>${photoGallery(item)}<div class="signature-receipts">${signatureReceipt(item.approvalSignature, '수리 진행 동의')}${signatureReceipt(item.finalSignature, '수리 이행 확인')}</div><div class="report-download"><div><h4>고객용 수리 완료 안내서</h4><p>수리 내용·비용·사진·서명을 큰 글씨의 PDF로 받으세요. 출력해서 전달할 수 있습니다.</p></div><button type="button" class="primary-button" data-report="pdf" data-case-id="${escapeHtml(item.id)}">수리 완료 안내서 PDF</button><p class="report-status" role="status" aria-live="polite"></p></div></div>`;
     default: return '<div class="waiting-box">이 상담은 출동 없이 원격 안내로 종료되었습니다.</div>';
   }
 }
@@ -739,7 +739,7 @@ function managerView() {
   const recent30=state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) >= recent30Start);
   const dispatchCases=state.cases.filter(c => c.assignedEngineer && c.stage === 'awaiting-arrival');
   const dispatchTable=state.staff.engineers.map(engineer => { const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer); return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt || c.createdAt)} · 오늘 수리 아님</small></li>`).join('') || '<li>배정된 고객 없음</li>'}</ol></article>`; }).join('');
-  return `<div class="manager-view manager-detail"><details class="manager-history"><summary>오늘 방문 결과 · 고객별 작업 시작과 완료</summary><p>오늘 수행한 현장 작업을 고객별로 묶은 기록입니다. 다음 방문은 배정 순서 기준이며, 실시간 GPS 위치가 아닙니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details><section class="manager-section-heading tomorrow-heading"><div><span>NEXT DAY ROUTE CONTROL</span><h2>내일의 배차 최적화</h2><p>오늘 접수·저장된 데모 고객을 후보로 본점 출발 거리와 예상 시간을 계산합니다.</p></div><div><strong>12</strong><span>내일 배차 후보</span></div><div><strong>${state.staff.engineers.length}</strong><span>통합 역량 기사</span></div></section><aside class="optimization-note"><h3>내일 배차는 어떤 기준으로 계산하나요?</h3><p>Google OR-Tools가 본사 출발 → 고객 방문 순서를 조합해 총 예상 이동시간이 짧은 배차안을 찾습니다. 기사당 최대 5건, 고객 우선순위를 반영하며 모든 기사는 동일 역량으로 계산합니다.</p><small>현재 계산 기준: 고객 좌표 간 직선거리 × 보정계수와 평균속도로 이동시간 추정 → OR-Tools 배차 → 네이버 Directions 도로 경로 표시. 실시간 교통 기반 최적해를 보장하는 방식은 아닙니다.</small></aside><section class="manager-map"><iframe title="내일의 AS 배차 최적화 지도와 기사별 방문 순서" src="./dispatch/?embedded=1&amp;day=tomorrow" loading="eager"></iframe></section>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+  return `<div class="manager-view manager-detail"><section class="report-download"><div><h3>누적 수리 이력</h3><p>기존 고객 이력 아래에 새로 완료한 고객을 포함합니다. 전체 완료 이력을 최신 서버 기록으로 받습니다.</p></div><button type="button" class="primary-button" data-report="xlsx">최신 누적 이력 엑셀 다운로드</button><p class="report-status" role="status" aria-live="polite"></p></section><details class="manager-history"><summary>오늘 방문 결과 · 고객별 작업 시작과 완료</summary><p>오늘 수행한 현장 작업을 고객별로 묶은 기록입니다. 다음 방문은 배정 순서 기준이며, 실시간 GPS 위치가 아닙니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details><section class="manager-section-heading tomorrow-heading"><div><span>NEXT DAY ROUTE CONTROL</span><h2>내일의 배차 최적화</h2><p>오늘 접수·저장된 데모 고객을 후보로 본점 출발 거리와 예상 시간을 계산합니다.</p></div><div><strong>12</strong><span>내일 배차 후보</span></div><div><strong>${state.staff.engineers.length}</strong><span>통합 역량 기사</span></div></section><aside class="optimization-note"><h3>내일 배차는 어떤 기준으로 계산하나요?</h3><p>Google OR-Tools가 본사 출발 → 고객 방문 순서를 조합해 총 예상 이동시간이 짧은 배차안을 찾습니다. 기사당 최대 5건, 고객 우선순위를 반영하며 모든 기사는 동일 역량으로 계산합니다.</p><small>현재 계산 기준: 고객 좌표 간 직선거리 × 보정계수와 평균속도로 이동시간 추정 → OR-Tools 배차 → 네이버 Directions 도로 경로 표시. 실시간 교통 기반 최적해를 보장하는 방식은 아닙니다.</small></aside><section class="manager-map"><iframe title="내일의 AS 배차 최적화 지도와 기사별 방문 순서" src="./dispatch/?embedded=1&amp;day=tomorrow" loading="eager"></iframe></section>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
 }
 function performanceView() {
   const rows=technicianPerformance(state.cases,state.staff.engineers,performanceDays);
@@ -794,6 +794,29 @@ $('#conversation').addEventListener('input',event=>{
   if(event.target.matches('[data-part-qty]')){syncSelectedParts();return;}
   updateQuotePreview(form);
 });
+// Keep file generation on the server and wait for the final signature/photo commit.
+let reportDownloading=false;
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-report]');
+  if(!button||reportDownloading)return;
+  reportDownloading=true;
+  const label=button.textContent,box=button.closest('.report-download'),notice=box.querySelector('.report-status');
+  button.disabled=true;button.textContent='파일 준비 중…';notice.textContent='최신 기록을 저장하고 파일을 생성합니다.';
+  try{
+    if(!recordSync)throw new Error('서버 연결을 기다린 뒤 다시 시도해 주세요.');
+    await recordSync.ensureSaved();
+    const isPdf=button.dataset.report==='pdf';
+    const path=isPdf?'./api/reports/repairs/'+encodeURIComponent(button.dataset.caseId)+'.pdf':'./api/reports/repairs.xlsx';
+    const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(90000)});
+    if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(typeof body.detail==='string'?body.detail:'파일 생성에 실패했습니다. 다시 시도해 주세요.');}
+    const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+    const encoded=response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    link.href=url;link.download=encoded?decodeURIComponent(encoded):(isPdf?'수리완료.pdf':'누적수리이력.xlsx');document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    notice.textContent='다운로드했습니다. 휴대폰에서는 브라우저의 다운로드 목록 또는 파일 앱에서 확인하세요.';
+  }catch(error){notice.textContent=error.name==='TimeoutError'?'파일 준비 시간이 초과되었습니다. 다시 시도해 주세요.':error.message;}
+  finally{reportDownloading=false;button.disabled=false;button.textContent=label;}
+});
+
 $('#conversation').addEventListener('click',async event=>{
   if(event.target.id!=='batch-assign' || routeBusy)return;
   if(state.role!=='manager')return;
