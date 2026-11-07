@@ -52,3 +52,32 @@ test('지도 미연결·누락·우선순위 역전 거부 및 정상 응답 수
     assert.equal((await calculateRoute('나주 출발지',cases)).stops.length,2);
   }finally{globalThis.fetch=original;routeConfig.endpoint='';}
 });
+
+const {defaultCatalog}=await import('../parts-catalog.js');
+const {dashboardStats,durationMinutes}=await import('../dashboard.js');
+const {planBatch}=await import('../route-provider.js');
+const {managerAccess,accessConfig}=await import('../manager-access.js');
+test('제공된 가격표 63개와 쉼표·별표 포함 부품명을 보존',()=>{
+  assert.equal(defaultCatalog.length,63);assert.equal(new Set(defaultCatalog.map(p=>p.name)).size,63);
+  assert.equal(parseParts('메인퓨즈 10 A × 1',defaultCatalog)[0].unitPrice,5600);
+  assert.equal(parseParts('샤프트 LH Ø28X324.4 × 1',defaultCatalog)[0].unitPrice,83800);
+  assert.equal(parseParts('앞타이어(휠반납조건) 15*6,00*6 × 2',defaultCatalog)[0].unitPrice,67000);
+  assert.equal(estimateTotal({parts:parseParts('키스위치 × 2\n콘트롤러 36V × 1',defaultCatalog),travelFee:33000}),543000);
+});
+test('서울 날짜 기준 완료·이월 미완료·소요시간 집계',()=>{
+  const cases=[{stage:'complete',createdAt:'2026-11-06T00:00:00Z',arrivedAt:'2026-11-06T14:30:00Z',completedAt:'2026-11-06T15:30:00Z'},{stage:'checklist',createdAt:'2026-11-05T00:00:00Z'},{stage:'remote-closed',createdAt:'2026-11-06T00:00:00Z',closedAt:'2026-11-06T14:59:00Z'}];
+  const stats=dashboardStats(cases,new Date('2026-11-07T00:00:00Z'));assert.equal(stats.done.length,1);assert.equal(stats.todo.length,1);assert.equal(durationMinutes(cases[0]),60);assert.equal(durationMinutes(cases[1]),null);
+});
+test('팀장 인증은 서버가 확인한 역할만 허용',async()=>{
+  const original=globalThis.fetch;accessConfig.sessionEndpoint='/api/session';
+  try{for(const role of ['counselor','engineer','manager']){globalThis.fetch=async()=>({ok:true,json:async()=>({authenticated:true,role})});assert.equal(await managerAccess(),role==='manager');}
+    globalThis.fetch=async()=>({ok:false});assert.equal(await managerAccess(),false);
+  }finally{globalThis.fetch=original;accessConfig.sessionEndpoint='';}
+});
+test('최적화된 동선 그룹을 서로 다른 기사에 무작위 연결하며 누락 응답을 거부',async()=>{
+  const original=globalThis.fetch;routeConfig.batchEndpoint='/api/batch';const cases=[{id:'A',dispatchAddress:'출동 A'},{id:'B',dispatchAddress:'출동 B'}];
+  try {globalThis.fetch=async(url,init)=>{const req=JSON.parse(init.body);assert.equal(req.optimize,'distance-time-only');assert.equal(req.stops[0].address,'출동 A');return {ok:true,json:async()=>({routes:cases.map(c=>({stops:[{caseId:c.id,distanceMeters:1,durationSeconds:1}]}))})};};
+    const plans=await planBatch('출발지',cases,['기사 A','기사 B']);assert.equal(new Set(plans.map(p=>p.engineer)).size,2);assert.deepEqual(plans.flatMap(p=>p.stops.map(s=>s.caseId)).sort(),['A','B']);
+    globalThis.fetch=async()=>({ok:true,json:async()=>({routes:[{stops:[{caseId:'A',distanceMeters:1,durationSeconds:1}]}]})});await assert.rejects(planBatch('출발지',cases,['기사 A','기사 B']),/확인할 수 없습니다/);
+  }finally{globalThis.fetch=original;routeConfig.batchEndpoint='';}
+});

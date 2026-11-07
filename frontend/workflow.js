@@ -1,3 +1,4 @@
+import { defaultCatalog, catalogSource } from './parts-catalog.js';
 export const defaultStaff = { counselors: ['상담사 A', '상담사 B', '상담사 C'], engineers: ['엔지니어 A', '엔지니어 B', '엔지니어 C'] };
 
 export function followUpQuestions(item) {
@@ -42,7 +43,7 @@ export function travelFee({ region, distanceKm }) {
 }
 
 export function parseParts(text, catalog) {
-  const lines = text.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
   if (!lines.length) throw new Error('부품명과 수량을 입력해 주세요.');
   return lines.map(line => {
     const match = line.match(/^(.+?)\s*(?:[x×*]\s*|\s+)(\d+)\s*(?:개)?$/i);
@@ -63,14 +64,15 @@ export function migrateState(state) {
   state.staff ||= structuredClone(defaultStaff);
   state.staff.counselors ||= [...defaultStaff.counselors]; state.staff.engineers ||= [...defaultStaff.engineers];
   state.selectedCounselor ||= state.staff.counselors[0]; state.selectedEngineer ||= state.staff.engineers[0];
-  state.catalog ||= []; state.routePlans ||= {}; state.originAddress ||= '';
+  if (!state.catalog?.length) { state.catalog=structuredClone(defaultCatalog); state.catalogSource=catalogSource; } state.routePlans ||= {}; state.originAddress ||= '';
   for (const item of state.cases) {
-    item.customerName ||= item.customerId; item.registeredAddress ||= ''; item.priority ||= 'normal';
+    item.customerName ||= item.customerId; item.registeredAddress ||= ''; item.priority = state.priorityVersion===2 ? (item.priority || 'normal') : ({urgent:'high',high:'normal',normal:'low'}[item.priority] || 'normal'); item.dispatchAddress ||= item.incidentLocation || ''; 
     item.counselorName ||= state.staff.counselors[0];
     item.beforePhotos ||= item.beforePhoto ? [item.beforePhoto] : [];
     item.afterPhotos ||= item.afterPhoto ? [item.afterPhoto] : [];
     if (item.analysis) item.analysis.checklist = customerChecklist(item, item.analysis);
     if (item.repairPlan && item.repairPlan.travelFee == null) item.repairPlan.legacy = true;
   }
+  state.priorityVersion=2;
   return state;
 }

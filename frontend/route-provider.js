@@ -17,3 +17,22 @@ export async function calculateRoute(originAddress, cases, { signal } = {}) {
   if (result.stops.some((s,i)=>i>0 && rank[expected.get(result.stops[i-1].caseId).priority] > rank[expected.get(s.caseId).priority])) throw new Error('긴급 접수 우선순위가 반영되지 않은 동선입니다.');
   return { stops:result.stops, calculatedAt:new Date().toISOString(), originAddress, source:result.source || '연결된 지도 서비스' };
 }
+
+// Return optimized geographic route groups first; equally skilled engineers are randomly mapped afterwards.
+routeConfig.batchEndpoint = '';
+export async function planBatch(originAddress, cases, engineers, { signal } = {}) {
+  if(!originAddress.trim())throw new Error('출발지 주소를 입력해 주세요.');
+  if(!cases.length || !engineers.length)throw new Error('미배정 접수와 기사 목록을 확인해 주세요.');
+  if(cases.some(c=>!c.dispatchAddress?.trim()))throw new Error('모든 접수의 출동 장소를 확인해 주세요.');
+  if(!routeConfig.batchEndpoint)throw new Error('지도 서비스 연결 대기 중입니다. 동선 계산 후 일괄 배정할 수 있습니다.');
+  const response=await fetch(routeConfig.batchEndpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},signal,body:JSON.stringify({originAddress,optimize:'distance-time-only',routeCount:Math.min(cases.length,engineers.length),stops:cases.map(c=>({caseId:c.id,address:c.dispatchAddress}))})});
+  if(!response.ok)throw new Error('동선 계산에 실패했습니다.');
+  const result=await response.json();
+  const routes=result.routes;
+  const stops=Array.isArray(routes)?routes.flatMap(r=>Array.isArray(r.stops)?r.stops:[]):[];
+  const expected=new Set(cases.map(c=>c.id));
+  if(!Array.isArray(routes)||routes.length!==Math.min(cases.length,engineers.length)||routes.some(r=>!Array.isArray(r.stops)||!r.stops.length)||stops.length!==expected.size||new Set(stops.map(s=>s.caseId)).size!==expected.size||stops.some(s=>!expected.has(s.caseId)||!Number.isFinite(s.distanceMeters)||s.distanceMeters<0||!Number.isFinite(s.durationSeconds)||s.durationSeconds<0))throw new Error('지도 응답의 방문지·거리·시간을 확인할 수 없습니다.');
+  const shuffled=[...engineers];
+  for(let i=shuffled.length-1;i>0;i--){const random=new Uint32Array(1);crypto.getRandomValues(random);const j=Math.floor(random[0]/4294967296*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
+  return routes.map((r,i)=>({engineer:shuffled[i],stops:r.stops,source:result.source||'연결된 지도 서비스',originAddress,calculatedAt:new Date().toISOString()}));
+}

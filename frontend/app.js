@@ -1,17 +1,21 @@
 import { loadState, saveState, createCase, replyToCounselor, buildAnalysis, unavailableAnalysis } from './services.js';
 
 import { migrateState, customerChecklist, travelFee, parseParts, estimateTotal } from './workflow.js';
-import { calculateRoute, routeConfig } from './route-provider.js';
+import { planBatch, routeConfig } from './route-provider.js';
 import { readPriceWorkbook, catalogFromRows } from './price-import.js';
 
+import { managerAccess } from './manager-access.js';
+import { dashboardStats, durationMinutes, closeReady } from './dashboard.js';
+
 const state = migrateState(loadState());
+let managerAuthorized = false;
 let priceSheets = [];
 let priceFileName = '';
 let routeBusy = false;
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const lines = value => escapeHtml(value).replace(/\n/g, '<br>');
-const date = value => new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+const date = value => new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric', timeZone:'Asia/Seoul', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const won = value => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(Number(value) || 0);
 const current = () => state.cases.find(item => item.id === state.activeId);
 let signatureHasInk = false;
@@ -39,7 +43,7 @@ function statusText(item) { return item?.status || '접수 준비'; }
 
 function startView() {
   return `<div class="welcome"><div class="welcome-icon" aria-hidden="true">✳</div><h2>고객의 말을 그대로 기록하세요.</h2><p>실구매자이자 실사용자인 고객의 정보로 접수합니다. 등록 주소와 고장 발생 위치를 구분해 주세요.</p></div>
-  <form id="start-form" class="stage-form card"><h3>상담 시작</h3><label>고객 이름 · 실구매자 / 실사용자<input name="customerName" required maxlength="80" autocomplete="name"></label><label>등록 주소<input name="registeredAddress" required maxlength="300" autocomplete="street-address"><small>제품에 등록된 주소를 입력합니다. 고장이 발생한 장소가 아닙니다.</small></label><label>현재 고장 발생 위치 (선택)<input name="incidentLocation" maxlength="300" autocomplete="off"></label><label>장비 식별 정보 (선택)<input name="equipmentId" maxlength="100" placeholder="ERP 제품명은 통화 종료 후 입력합니다."></label><button class="primary-button" type="submit">상담 시작</button></form><p class="demo-note">시연에는 합성 고객 정보만 입력하세요.</p>`;
+  <form id="start-form" class="stage-form card"><h3>상담 시작</h3><label>고객 이름 · 실구매자 / 실사용자<input name="customerName" required maxlength="80" autocomplete="name"></label><label>등록 주소<input name="registeredAddress" required maxlength="300" autocomplete="street-address"><small>제품에 등록된 주소를 입력합니다. 고장이 발생한 장소가 아닙니다.</small></label><label>출동 장소<input name="dispatchAddress" required maxlength="300" autocomplete="off"></label><label>장비 식별 정보 (선택)<input name="equipmentId" maxlength="100" placeholder="ERP 제품명은 통화 종료 후 입력합니다."></label><button class="primary-button" type="submit">상담 시작</button></form><p class="demo-note">시연에는 합성 고객 정보만 입력하세요.</p>`;
 }
 
 function transcript(item, engineerView = false) {
@@ -49,7 +53,7 @@ function transcript(item, engineerView = false) {
 }
 
 function callEndForm(item) {
-  return `<article class="message"><div class="avatar" aria-hidden="true">F</div><div class="message-body"><div class="message-head"><strong>Fieldnote</strong></div><div class="card"><div class="card-title"><span class="step-index">2</span><div><h3>통화 종료 전 확인</h3><p>아래 3개 항목은 원문과 별도로 확정해야 출동 규칙을 적용할 수 있습니다.</p></div></div><form id="close-form" class="form-grid"><label>접수 구분<select name="incidentType" id="incident-type" required><option value="breakdown">고장</option><option value="accident">사고</option></select></label><label class="insurance-field" hidden>보험수리 가능 여부<select name="insuranceRepair" id="insurance-repair"><option value="unknown">확인 필요</option><option value="yes">가능</option><option value="no">불가</option></select></label><label class="insurance-enrollment" hidden>보험 가입 여부<select name="insuranceEnrolled"><option value="unknown">확인 필요</option><option value="yes">가입</option><option value="no">미가입</option></select></label><label>상담 우선순위<select name="priority"><option value="normal">일반</option><option value="high">우선</option><option value="urgent">긴급</option></select></label><div class="full">${yesNo('visitRequested', '고객이 방문을 요청했나요?')}${yesNo('cannotDrive', '주행이 불가능한가요?')}${yesNo('selfCareWanted', '고객이 직접 조치하기를 원하나요?')}</div><label class="full">일반 건 출동 여부<select name="manualChoice" required><option value="">선택해 주세요</option><option value="yes">출동</option><option value="no">원격 안내</option></select><small>고객 요청·주행 불가·유사 사례 없음 규칙에 해당하면 이 선택보다 출동 규칙이 우선합니다.</small></label><div class="form-actions full"><button class="ghost-button" type="button" id="cancel-close">통화 계속</button><button class="primary-button" type="submit">통화 종료 · 기록 잠금</button></div></form></div></div></article>`;
+  return `<article class="message"><div class="avatar" aria-hidden="true">F</div><div class="message-body"><div class="message-head"><strong>Fieldnote</strong></div><div class="card"><div class="card-title"><span class="step-index">2</span><div><h3>통화 종료 전 재확인</h3><p>입력한 내용과 아래 항목을 다시 확인한 뒤 통화를 종료하세요.</p></div></div><form id="close-form" class="form-grid"><label>접수 구분<select name="incidentType" id="incident-type" required><option value="breakdown">고장</option><option value="accident">사고</option></select></label><label class="insurance-field" hidden>보험수리 가능 여부<select name="insuranceRepair" id="insurance-repair"><option value="unknown">확인 필요</option><option value="yes">가능</option><option value="no">불가</option></select></label><label class="insurance-enrollment" hidden>보험 가입 여부<select name="insuranceEnrolled"><option value="unknown">확인 필요</option><option value="yes">가입</option><option value="no">미가입</option></select></label><label>상담 우선순위<select name="priority"><option value="high">상</option><option value="normal" selected>중</option><option value="low">하</option></select></label><div class="full">${yesNo('visitRequested', '고객이 방문을 요청했나요?')}${yesNo('cannotDrive', '주행이 불가능한가요?')}${yesNo('selfCareWanted', '고객이 직접 조치하기를 원하나요?')}</div><label class="full">일반 건 출동 여부<select name="manualChoice" required><option value="">선택해 주세요</option><option value="yes">출동</option><option value="no">원격 안내</option></select><small>고객 요청·주행 불가·유사 사례 없음 규칙에 해당하면 이 선택보다 출동 규칙이 우선합니다.</small></label><fieldset class="full erp-fields"><legend>ERP 확인 후 직접 입력</legend><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" placeholder="이력이 없으면 없음, 확인 불가이면 사유를 입력하세요."></textarea></label><label>제품명<input name="productName" required maxlength="150"></label><label>구입 시점<input name="purchaseDate" required maxlength="80"></label><label>출동 장소<input name="dispatchAddress" required maxlength="300" value="${escapeHtml(item.dispatchAddress || '')}"></label></fieldset><div class="form-actions full"><button class="ghost-button" type="button" id="cancel-close">통화 계속</button><button id="finish-call" class="primary-button" type="submit" disabled>통화 종료 · 기록 잠금</button></div></form></div></div></article>`;
 }
 function yesNo(name, question) {
   return `<fieldset class="choice-field"><legend>${escapeHtml(question)}</legend><label><input type="radio" name="${name}" value="yes" required><span>예</span></label><label><input type="radio" name="${name}" value="no" required><span>아니요</span></label></fieldset>`;
@@ -119,6 +123,7 @@ function stageForm(item) {
 }
 
 function engineerView(item) {
+  if (item.dispatch?.required && !item.assignedEngineer) return '<div class="waiting-box">전체 접수 후 팀장의 동선 계산·일괄 배정을 기다립니다.</div>';
   if (item.stage === 'erp-pending') return `<div class="waiting-box">상담사가 ERP 정보를 확인하고 있습니다.</div>${transcript(item,true)}`;
   if (item.assignedEngineer && item.assignedEngineer !== state.selectedEngineer) return '<div class="waiting-box">다른 기사에게 배정된 접수입니다. 담당자를 변경해 확인하세요.</div>';
   if (item.stage === 'counseling') return `<div class="waiting-box">상담이 진행 중입니다. 통화 종료 후 기술 진단과 원문 대화가 표시됩니다.</div>${transcript(item, true)}`;
@@ -149,7 +154,8 @@ function render(scrollPosition = 'bottom') {
   $('#role-engineer').setAttribute('aria-pressed', String(state.role === 'engineer'));
   $('#case-list').innerHTML = state.cases.length ? [...state.cases].reverse().map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">${escapeHtml(c.status)}</span></button>`).join('') : '<p class="empty-cases">아직 접수된 상담이 없습니다.</p>';
   $('#conversation').innerHTML = state.role==='manager' ? managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
-  $('#details').innerHTML = renderDetails();
+  $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
+  $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
   bindSignature();
   $('#conversation').scrollTop = scrollPosition === 'top' ? 0 : $('#conversation').scrollHeight;
 }
@@ -209,10 +215,10 @@ $('#conversation').addEventListener('submit', async event => {
   const data = new FormData(form); const item = current();
   if (form.id === 'start-form') {
     const customerName=String(data.get('customerName')).trim(); const registeredAddress=String(data.get('registeredAddress')).trim();
-    if (!customerName || !registeredAddress) return formError(form,'고객 이름과 등록 주소를 확인해 주세요.','customerName');
+    if (!customerName || !registeredAddress || !String(data.get('dispatchAddress')||'').trim()) return formError(form,'고객 이름과 등록 주소를 확인해 주세요.','customerName');
     const knownCustomer=state.cases.find(c=>c.customerName===customerName && c.registeredAddress===registeredAddress);
     const created = createCase(knownCustomer?.customerId || `CUSTOMER-${Date.now().toString(36)}`, String(data.get('equipmentId')||'확인 필요'));
-    Object.assign(created,{customerName,registeredAddress,incidentLocation:String(data.get('incidentLocation')||'').trim(),counselorName:state.selectedCounselor,priority:'normal',beforePhotos:[],afterPhotos:[]});
+    Object.assign(created,{customerName,registeredAddress,dispatchAddress:String(data.get('dispatchAddress')||'').trim(),counselorName:state.selectedCounselor,priority:'normal',beforePhotos:[],afterPhotos:[]});
     created.transcript.push(entry('assistant', '고객이 설명한 내용을 가능한 한 원문 그대로 보내주세요. 사례를 확인해 상담에 필요한 기술적 답변을 드리겠습니다.'));
     state.cases.push(created); state.activeId = created.id; state.role = 'counselor';
     if (persist()) render(); return;
@@ -228,13 +234,16 @@ $('#conversation').addEventListener('submit', async event => {
   }
   if (form.id === 'close-form') {
     if (item.stage !== 'counseling' || sending) return;
+    if(!closeReady(form))return formError(form,'재확인 항목과 ERP 내역을 모두 입력해 주세요.');
+    item.erp={productName:String(data.get('productName')).trim(),purchaseDate:String(data.get('purchaseDate')).trim(),repairHistory:String(data.get('repairHistory')).trim(),confirmedBy:state.selectedCounselor,confirmedAt:new Date().toISOString()};
+    item.dispatchAddress=String(data.get('dispatchAddress')).trim();
     const flags = { visitRequested:data.get('visitRequested')==='yes', cannotDrive:data.get('cannotDrive')==='yes', selfCareWanted:data.get('selfCareWanted')==='yes' };
     const manualChoice = data.get('manualChoice') === 'yes';
     item.incidentType=String(data.get('incidentType'));
     item.insuranceRepair=item.incidentType==='accident'?String(data.get('insuranceRepair')):null;
     item.insuranceEnrolled=item.insuranceRepair==='yes'?String(data.get('insuranceEnrolled')):null;
     item.priority=String(data.get('priority'));
-    item.flags = flags; item.stage='erp-pending'; item.status='ERP 확인 대기'; sending=true;
+    item.flags = flags; item.stage='analyzing'; item.status='분석 중'; sending=true;
     item.transcript.push(entry('assistant','통화가 종료되었습니다. 상담 원문은 잠겼으며 엔지니어에게 전달됩니다.'));
     persist(); render();
     try { item.analysis = await buildAnalysis(item, state.cases, flags, manualChoice); }
@@ -242,7 +251,9 @@ $('#conversation').addEventListener('submit', async event => {
     item.analysis.checklist=customerChecklist(item,item.analysis);
     item.dispatch = item.analysis.dispatch;
     sending=false;
-    item.stage='erp-pending'; item.status='ERP 확인 대기';
+    item.closedAt=new Date().toISOString();
+    item.stage=item.dispatch.required?'awaiting-arrival':'remote-closed'; item.status=item.dispatch.required?'출동 배정 대기':'원격 안내 종료';
+    if(item.dispatch.required)item.fieldLog.push(entry('assistant','팀장이 동선을 계산하고 기사를 일괄 배정합니다.')); 
     state.closeFormOpen = false; if (persist()) render(); return;
   }
   if (form.id==='erp-form' && state.role==='counselor' && item.stage==='erp-pending') {
@@ -254,13 +265,13 @@ $('#conversation').addEventListener('submit', async event => {
     if(item.dispatch.required) item.fieldLog.push(entry('assistant','현장에 도착하면 ‘도착’이라고 보내주세요.'));
     if(persist())render();return;
   }
-  if (state.role !== 'engineer' || (item.assignedEngineer && item.assignedEngineer!==state.selectedEngineer)) return;
+  if (state.role !== 'engineer' || !item.assignedEngineer || (item.assignedEngineer && item.assignedEngineer!==state.selectedEngineer)) return;
   if (form.id === 'arrival-form' && item.stage === 'awaiting-arrival') {
     const text = String(data.get('text')).trim();
     if (!text.includes('도착')) return formError(form, '현장에 도착했으면 “도착”이라고 입력해 주세요.', 'text');
-    item.assignedEngineer ||= state.selectedEngineer;
+    item.arrivedAt=new Date().toISOString();
+    recordPosition(item,'arrival',item.arrivedAt);
     item.analysis.checklist=customerChecklist(item,item.analysis);
-    invalidateRoutes();
     advance(item, text, 'checklist', '도착이 확인되었습니다. 고객이 설명한 증상과 분석 결과를 바탕으로 브레이크·타이어 상태를 포함해 점검하고 결과를 기록해 주세요.', '현장 도착'); return;
   }
   if (form.id === 'checklist-form' && item.stage === 'checklist') {
@@ -283,6 +294,7 @@ $('#conversation').addEventListener('submit', async event => {
     if(!data.get('consent')) return formError(form,'고객의 확인이 필요합니다.','consent');
     const name = String(data.get('typedName')||'').trim();
     if (!signatureHasInk && !name) return formError(form, '서명 영역에 서명하거나 고객 성명을 입력해 주세요.', 'typedName');
+    recordPosition(item,'approval',new Date().toISOString());
     item.approvalSignature = { image:signatureHasInk ? $('.signature-pad').toDataURL('image/png') : null, typedName:name, signedAt:new Date().toISOString() };
     advance(item, '고객이 예상 수리 내용과 금액에 동의함', 'repair-notes', '수리를 마쳤다면 실제 수리 내용과 조치 결과를 적어 주세요.', '수리 진행 중'); return;
   }
@@ -312,6 +324,7 @@ $('#conversation').addEventListener('submit', async event => {
     if (!signatureHasInk && !name) return formError(form, '서명 영역에 서명하거나 고객 성명을 입력해 주세요.', 'typedName');
     item.finalSignature = { image:signatureHasInk ? $('.signature-pad').toDataURL('image/png') : null, typedName:name, signedAt:new Date().toISOString() };
     item.repairFulfilled = true; item.privacyAcknowledged=true; item.privacyVersion='demo-v1'; item.completedAt = new Date().toISOString();
+    recordPosition(item,'complete',item.completedAt);
     advance(item, '고객이 개인정보 처리 내역을 확인하고 요청한 수리 이행에 최종 서명함', 'complete', '현장 완료 보고가 저장되었습니다.', '작업 완료');
   }
 });
@@ -326,19 +339,30 @@ function privacyNotice() {
 function photoGallery(item) {
   return `<div class="photo-gallery">${[['수리 전',item.beforePhotos],['수리 후',item.afterPhotos]].map(([title,photos])=>`<section><h4>${title} 사진 · ${(photos||[]).length}장</h4><div class="photo-pair">${(photos||[]).map((photo,i)=>`<figure><img src="${photo}" width="220" height="130" loading="lazy" alt="${title} 사진 ${i+1}"><figcaption>${title} ${i+1}</figcaption></figure>`).join('')}</div></section>`).join('')}</div>`;
 }
-const priorityLabel = p => ({urgent:'긴급',high:'우선',normal:'일반'})[p] || '일반';
+const priorityLabel = p => ({high:'상',normal:'중',low:'하'})[p] || '중';
+function availableEngineers(){return state.staff.engineers.filter(name=>!state.cases.some(c=>c.assignedEngineer===name&&!['complete','remote-closed'].includes(c.stage)));}
 function pendingCases(engineer) { return state.cases.filter(c=>c.dispatch?.required && c.stage==='awaiting-arrival' && (!engineer || c.assignedEngineer===engineer)); }
 function priceImportView() {
   if(!priceSheets.length) return '';
   return `<form id="catalog-map-form" class="stage-form"><h4>${escapeHtml(priceFileName)} · 열 확인</h4><label>시트<select id="price-sheet" name="sheet">${priceSheets.map((sheet,i)=>`<option value="${i}">${escapeHtml(sheet.name)}</option>`).join('')}</select></label><div id="price-mapping"></div><button class="primary-button" type="submit">가격표 확인 · 등록</button></form>`;
 }
 function managerView() {
-  const queue=pendingCases().sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]-{urgent:0,high:1,normal:2}[b.priority]) || a.createdAt.localeCompare(b.createdAt));
-  return `<div class="manager-view"><h2>출동 배정</h2><p>등록 주소와 상담 우선순위를 확인하고 담당 기사를 지정하세요.</p><form id="origin-form" class="stage-form"><label>동선 출발지 주소<input name="originAddress" required maxlength="300" value="${escapeHtml(state.originAddress)}"></label><button class="ghost-button" type="submit">출발지 저장</button></form><p class="route-notice" role="status">${routeConfig.endpoint?'출발지를 저장하고 기사별 동선을 계산해 주세요.':'지도 서비스 연결 전입니다. 거리·시간은 연결 후 표시합니다.'}</p><div class="dispatch-queue">${queue.length?queue.map(c=>`<form class="assignment-form card" data-id="${escapeHtml(c.id)}"><div class="queue-heading"><strong>${escapeHtml(c.customerName)}</strong>${labelBadge(priorityLabel(c.priority), c.priority==='urgent'?'violet':'')}</div><p><b>등록 주소</b> ${escapeHtml(c.registeredAddress||'확인 필요')}</p>${c.incidentLocation?`<p><b>고장 발생 위치</b> ${escapeHtml(c.incidentLocation)}</p>`:''}<p>${escapeHtml(c.transcript.filter(m=>m.role==='counselor').map(m=>m.text).join(' / ').slice(0,220))}</p><p><b>초기 진단</b> ${escapeHtml(c.analysis?.diagnosis||'확인 필요')}</p><p><b>접수</b> ${escapeHtml(c.counselorName)} · ${escapeHtml(c.erp?.productName||'ERP 확인 대기')}</p><label>우선순위<select name="priority">${['urgent','high','normal'].map(p=>`<option value="${p}" ${p===c.priority?'selected':''}>${priorityLabel(p)}</option>`).join('')}</select></label><label>담당 기사<select name="assignedEngineer"><option value="">미배정</option>${state.staff.engineers.map(name=>`<option ${name===c.assignedEngineer?'selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label><button class="primary-button" type="submit">배정 저장</button></form>`).join(''):'<p>ERP 확인을 마친 출동 대기 건이 없습니다.</p>'}</div><h3>기사별 동선</h3>${state.staff.engineers.map(name=>{
-    const cases=pendingCases(name); const plan=state.routePlans[name];
-    return `<section class="route-card card"><h4>${escapeHtml(name)} · ${cases.length}건</h4>${plan?`<p>${escapeHtml(plan.source)} · ${date(plan.calculatedAt)}</p><ol>${plan.stops.map(stop=>`<li>${escapeHtml(state.cases.find(c=>c.id===stop.caseId)?.customerName||stop.caseId)} · ${(stop.distanceMeters/1000).toFixed(1)}km · ${Math.ceil(stop.durationSeconds/60)}분</li>`).join('')}</ol>`:`<p>등록 주소 기준 방문 순서는 지도 연결 후 계산합니다.</p>`}<button class="ghost-button route-calculate" data-engineer="${escapeHtml(name)}" ${routeBusy?'disabled':''}>우선순위·거리·시간으로 동선 계산</button></section>`;
-  }).join('')}<details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+  if(!managerAuthorized)return '<div class="waiting-box"><h2>팀장 전용 대시보드</h2><p>팀장 계정 인증이 필요합니다. 인증 서비스 연결 후 접근할 수 있습니다.</p></div>';
+  const {done,todo}=dashboardStats(state.cases);
+  const queue=pendingCases().filter(c=>!c.assignedEngineer);
+  const collecting=state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage));
+  return `<div class="manager-view"><h2>오늘의 현장 운영</h2><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><h3>전체 접수 · 동선 일괄 배정</h3><p>기사 역량은 동일하게 보고 출동 장소의 거리·시간으로 동선을 구성한 뒤 기사 이름을 무작위로 연결합니다.</p><form id="origin-form" class="stage-form"><label>동선 출발지 주소<input name="originAddress" required maxlength="300" value="${escapeHtml(state.originAddress)}"></label><button class="ghost-button" type="submit">출발지 저장</button></form><label class="consent-row"><input id="batch-ready" type="checkbox" ${collecting?'disabled':''}>이번 배정에 포함할 모든 사건의 접수가 끝났습니다.</label><p class="route-notice" role="status">${collecting?'진행 중인 상담을 먼저 종료해 주세요.':'출동 장소 기준으로 동선을 계산합니다. 지도 서비스 연결 전에는 배정하지 않습니다.'}</p><button id="batch-assign" class="primary-button" disabled>전체 동선 계산 · 기사 무작위 일괄 배정</button><div class="dispatch-queue">${queue.map(c=>`<article class="card"><div class="queue-heading"><strong>${escapeHtml(c.customerName)}</strong>${labelBadge(priorityLabel(c.priority))}</div><p>출동 장소: ${escapeHtml(c.dispatchAddress||'확인 필요')}</p><p>등록 주소: ${escapeHtml(c.registeredAddress)}</p><p>${escapeHtml(c.analysis?.diagnosis||'확인 필요')}</p></article>`).join('')||'<p>미배정 출동 접수가 없습니다.</p>'}</div><h3>기사별 이동 · 위치 기록</h3><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
 }
+function engineerTimeline(engineer) {
+  const active=state.cases.filter(c=>c.assignedEngineer===engineer && !['complete','remote-closed'].includes(c.stage));
+  const stops=state.routePlans[engineer]?.stops||[];
+  const next=stops.map(s=>active.find(c=>c.id===s.caseId)).find(Boolean)||active[0];
+  const records=state.cases.filter(c=>c.assignedEngineer===engineer).flatMap(c=>(c.positionEvents||[]).map(event=>({...event,customerName:c.customerName}))).sort((a,b)=>b.at.localeCompare(a.at));
+  const metric=state.routePlans[engineer]?.stops.find(s=>s.caseId===next?.id);
+  return `<section class="route-card card"><h4>${escapeHtml(engineer)}</h4>${metric?`<p>이전 방문지/출발지에서 ${(metric.distanceMeters/1000).toFixed(1)}km · ${Math.ceil(metric.durationSeconds/60)}분 (지도 계산값)</p>`:''}<p>${next ? `${next.arrivedAt?'현장 작업 중':'이동 예정'}: ${escapeHtml(next.dispatchAddress)}` : '현재 배정 없음'}</p><ol class="location-flags">${records.map(event=>`<li><span aria-hidden="true">⚑</span> ${escapeHtml({arrival:'도착',approval:'고객 수리 동의 서명',complete:'수리 완료 · 고객 최종 서명'}[event.type])} · ${date(event.at)}<p>${escapeHtml(event.customerName)} · ${escapeHtml(event.address)}</p></li>`).join('')||'<li>아직 위치 기록이 없습니다.</li>'}</ol></section>`;
+}
+function recordPosition(item,type,at) {item.positionEvents ||= [];item.positionEvents.push({type,at,address:item.dispatchAddress||'출동 장소 확인 필요',basis:'dispatch-address'});}
+
 function renderPriceMapping() {
   const target=$('#price-mapping'); if(!target)return;
   const sheet=priceSheets[Number($('#price-sheet').value)]; if(!sheet)return;
@@ -347,11 +371,14 @@ function renderPriceMapping() {
   const choices=Array.from({length:width},(_,i)=>`<option value="${i}">${i+1}열 · ${escapeHtml(sheet.rows[header]?.[i]||'열 이름 없음')}</option>`).join('');
   target.innerHTML=`<label>열 제목이 있는 행<select id="price-header" name="headerRow">${sheet.rows.slice(0,20).map((row,i)=>`<option value="${i}" ${i===header?'selected':''}>${i+1}번째 내용 행 · ${escapeHtml(row.filter(Boolean).join(' / ').slice(0,80))}</option>`).join('')}</select></label><div class="price-columns">${[['nameColumn','부품명'],['retailColumn','소비자가'],['laborColumn','공임']].map(([key,label])=>`<label>${label} 열<select name="${key}" required><option value="">열 선택</option>${choices}</select></label>`).join('')}</div><div class="table-scroll"><table><caption>선택 시트 미리보기 (상위 6행)</caption><tbody>${sheet.rows.slice(header,header+6).map(row=>`<tr>${Array.from({length:width},(_,i)=>`<td>${escapeHtml(row[i]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
-function invalidateRoutes() { state.routePlans={}; }
+function updateCloseButton(){const form=$('#close-form');if(form)$('#finish-call').disabled=!closeReady(form)||sending;}
+function invalidateRoutes() { for(const [name,plan] of Object.entries(state.routePlans)){if(!state.cases.some(c=>c.assignedEngineer===name && !['complete','remote-closed'].includes(c.stage) && plan.stops.some(stop=>stop.caseId===c.id)))delete state.routePlans[name];} }
 
-$('#role-manager').addEventListener('click',()=>{state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
+$('#role-manager').addEventListener('click',async()=>{managerAuthorized=await managerAccess();state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
 $('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer')state.selectedEngineer=event.target.value;persist();render('top');});
 $('#conversation').addEventListener('change',event=>{
+  if(event.target.closest('#close-form'))updateCloseButton();
+  if(event.target.id==='batch-ready')$('#batch-assign').disabled=!event.target.checked||routeBusy;
   if(event.target.id==='incident-type' || event.target.id==='insurance-repair') {
     const accident=$('#incident-type').value==='accident';
     $('.insurance-field').hidden=!accident;
@@ -361,29 +388,38 @@ $('#conversation').addEventListener('change',event=>{
   if(event.target.id==='price-header')renderPriceMapping();
 });
 $('#conversation').addEventListener('input',event=>{
+  if(event.target.closest('#close-form'))updateCloseButton();
   const form=event.target.closest('#plan-form'); if(!form)return;
   const data=new FormData(form);
   try {const parts=parseParts(String(data.get('partsChat')),state.catalog);const fee=travelFee({region:data.get('region'),distanceKm:data.get('distanceKm')});$('#quote-preview').textContent=`부품비 ${won(parts.reduce((sum,p)=>sum+p.qty*p.unitPrice,0))} + 출장비 ${won(fee)} = ${won(estimateTotal({parts,travelFee:fee}))}`;}
   catch(error){$('#quote-preview').textContent=error.message;}
 });
 $('#conversation').addEventListener('click',async event=>{
-  const button=event.target.closest('.route-calculate');if(!button || routeBusy)return;
-  routeBusy=true;button.disabled=true;button.textContent='동선 계산 중…';
-  const engineer=button.dataset.engineer; const cases=structuredClone(pendingCases(engineer)); const origin=state.originAddress;
+  if(event.target.id!=='batch-assign' || routeBusy)return;
+  if(!await managerAccess()){managerAuthorized=false;render('top');return;}
+  if(!$('#batch-ready')?.checked || state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage)))return;
+  const cases=structuredClone(pendingCases().filter(c=>!c.assignedEngineer)),origin=state.originAddress,engineers=availableEngineers();
+  const button=event.target;routeBusy=true;button.disabled=true;
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
-  try {const plan=await calculateRoute(origin,cases,{signal:controller.signal});
-    if(JSON.stringify(cases)!==JSON.stringify(pendingCases(engineer)) || origin!==state.originAddress)throw new Error('배정이 변경되었습니다. 현재 배정으로 다시 계산해 주세요.');
-    state.routePlans[engineer]=plan;routeBusy=false;persist();render('top');renderPriceMapping();
-  } catch(error) { const notice=$('.route-notice'); if(notice)notice.textContent=error.name==='AbortError'?'동선 계산 시간이 초과되었습니다. 다시 시도해 주세요.':error.message; }
-  finally {clearTimeout(timer);routeBusy=false;if(button.isConnected){button.disabled=false;button.textContent='우선순위·거리·시간으로 동선 계산';}}
+  try {
+    const plans=await planBatch(origin,cases,engineers,{signal:controller.signal});
+    if(state.role!=='manager' || !await managerAccess())throw new Error('팀장 인증을 다시 확인해 주세요.');
+    if(JSON.stringify(cases)!==JSON.stringify(pendingCases().filter(c=>!c.assignedEngineer))||origin!==state.originAddress||JSON.stringify(engineers)!==JSON.stringify(availableEngineers())||state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage)))throw new Error('접수나 출발지가 변경되었습니다. 다시 계산해 주세요.');
+    const previous=structuredClone(state);
+    for(const plan of plans){state.routePlans[plan.engineer]=plan;for(const stop of plan.stops){const item=state.cases.find(c=>c.id===stop.caseId);item.assignedEngineer=plan.engineer;item.assignedAt=new Date().toISOString();item.status='출동 배정 완료';}}
+    if(!persist()){Object.assign(state,previous);throw new Error('배정 저장에 실패했습니다.');}
+    routeBusy=false;render('top');
+  } catch(error){const notice=$('.route-notice');if(notice)notice.textContent=error.name==='AbortError'?'동선 계산 시간이 초과되었습니다.':error.message;}
+  finally{clearTimeout(timer);routeBusy=false;if(button.isConnected)button.disabled=!$('#batch-ready')?.checked;}
 });
 $('#conversation').addEventListener('submit',async event=>{
   const form=event.target;
   if(!['origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) && !form.classList.contains('assignment-form'))return;
-  event.preventDefault();const data=new FormData(form);
+  event.preventDefault();
+  if(state.role!=='manager' || !await managerAccess()){managerAuthorized=false;render('top');return;}
+  const data=new FormData(form);
   try {
     if(form.id==='origin-form') {state.originAddress=String(data.get('originAddress')).trim();invalidateRoutes();}
-    if(form.classList.contains('assignment-form')) {const item=state.cases.find(c=>c.id===form.dataset.id);if(!item || item.stage!=='awaiting-arrival')throw new Error('현재 출동 대기 상태를 확인해 주세요.');item.assignedEngineer=String(data.get('assignedEngineer'));item.priority=String(data.get('priority'));invalidateRoutes();}
     if(form.id==='staff-form') {
       const names=key=>[...new Set(String(data.get(key)).split('\n').map(n=>n.trim()).filter(Boolean))];
       const counselors=names('counselors'),engineers=names('engineers');
