@@ -18,6 +18,7 @@
       </a>
       <div class="workspace-label">WORKSPACE <span>AX INNOVATION 2026</span></div>
       <button class="new-case" id="new-case" type="button"><span>＋</span> 새 상담 시작</button>
+      <button class="new-case" id="load-demo" type="button" style="margin-top:8px">고객 A·B·C 데모 불러오기</button>
       <div class="side-heading"><span>접수 내역</span><span id="case-count">0</span></div>
       <div id="case-list" class="case-list"></div>
       <div class="sidebar-bottom"><span class="pulse"></span> 합성 데이터 시연 모드</div>
@@ -26,7 +27,7 @@
     <main class="main-area" id="main-content">
       <header class="topbar">
         <div class="topbar-title"><span class="breadcrumb">서비스 운영 <span>/</span> 접수 대화</span><h1 id="page-title">새 상담</h1></div>
-        <div class="topbar-actions"><span class="mode-tag">DEMO MODE</span><div class="role-switch" role="group" aria-label="사용자 역할"><button id="role-counselor" type="button">상담사</button><button id="role-engineer" type="button">엔지니어</button></div></div>
+        <div class="topbar-actions"><span class="mode-tag">DEMO MODE</span><div class="role-switch" role="group" aria-label="사용자 역할"><button id="role-counselor" type="button">상담사</button><button id="role-manager" type="button">팀장</button><button id="role-engineer" type="button">엔지니어</button></div><label class="staff-picker">담당자<select id="staff-select" aria-label="담당자 선택"></select></label></div>
       </header>
 
       <div class="content-grid">
@@ -41,3 +42,4 @@
   <script type="module" src="./app.js"></script>
 </body>
 </html>
+

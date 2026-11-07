@@ -1,3 +1,4 @@
+import { followUpQuestions, customerChecklist } from './workflow.js';
 const STORAGE_KEY = 'yeosu-fieldnote-chat-v2';
 
 export const referenceCases = [
@@ -64,11 +65,24 @@ export function createCase(customerId, equipmentId) {
   };
 }
 
-// Replace only these two functions with team backend calls. Never put AgentStream keys in frontend code.
 export async function replyToCounselor(item, rawText) {
-  const match = findSimilar(rawText)[0];
-  if (match) return `${match.counselorReply}\n근거: ${match.source} (합성 데모)`;
-  return '현재 연결된 합성 사례에서 근거를 찾지 못했습니다. 발생 시점, 오류 표시, 운행 가능 여부를 확인해 주세요. 수리 방법은 확인 필요로 남깁니다.';
+  const history = item.transcript.slice(-20).map(message => ({
+    role: message.role === 'assistant' ? 'assistant' : 'user',
+    content: String(message.text || '')
+  }));
+  const response = await fetch('./api/agentstream/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caseId: item.id, message: rawText, history }),
+    signal: AbortSignal.timeout(35000)
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.detail || 'AgentStream 상담 연결 실패');
+  }
+  const result = await response.json();
+  if (!result.reply) throw new Error('AgentStream 답변 없음');
+  return result.reply;
 }
 
 export async function buildAnalysis(item, previousCases, flags, manualChoice) {
@@ -81,7 +95,7 @@ export async function buildAnalysis(item, previousCases, flags, manualChoice) {
     mode: 'mock', searchStatus: 'ok', history,
     similar: similar.map(({ id, title, source, score }) => ({ id, title, source, score })),
     diagnosis: best?.diagnosis || '확인 필요: 유사 사례가 없어 현장 증상 재현과 계측을 통한 원인 진단이 필요합니다.',
-    checklist: best?.steps || ['고객 진술과 증상 재현 조건 확인', '안전 확보 후 오류 표시·부품 상태 기록', '측정값과 조치 결과 기록', '상급 엔지니어 검토 요청'],
+    checklist: customerChecklist(item, { checklist: best?.steps || ['고객 진술과 증상 재현 조건 확인', '안전 확보 후 오류 표시·부품 상태 기록', '측정값과 조치 결과 기록', '상급 엔지니어 검토 요청'] }),
     missingInfo: best ? [] : ['검증된 유사 사례', '확정된 원인 및 수리 방법'],
     dispatch: decideDispatch(flags, 'ok', similar.length, manualChoice)
   };
@@ -91,8 +105,9 @@ export function unavailableAnalysis(flags, manualChoice) {
   return {
     mode: 'unavailable', searchStatus: 'error', history: [], similar: [],
     diagnosis: '확인 필요: 분석 서비스에 연결되지 않아 현장 진단이 필요합니다.',
-    checklist: ['고객 진술과 현장 증상 확인', '안전 확보 후 오류 표시 기록', '상급 엔지니어 검토 요청'],
+    checklist: ['고객과 브레이크 작동·제동 상태 확인 및 결과 기록', '고객과 타이어 마모·손상·공기압 상태 확인 및 결과 기록', '고객 진술과 현장 증상 확인', '안전 확보 후 오류 표시 기록', '상급 엔지니어 검토 요청'],
     missingInfo: ['고객 접수 이력', '유사 사례와 출처', '확정된 원인'],
     dispatch: decideDispatch(flags, 'error', 0, manualChoice)
   };
 }
+

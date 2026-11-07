@@ -1,0 +1,40 @@
+# 농기계 AS 기사 배차·동선 데모
+
+FastAPI가 CSV 접수를 Geocoding하고, 전문 파트가 맞는 기사에게 OR-Tools CVRP로 배정한 뒤 기사별로 Directions 5를 한 번 호출합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다.
+
+## 실행 3줄
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r frontend/dispatch/requirements.txt && cp -n frontend/dispatch/.env.example frontend/dispatch/.env
+uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
+```
+
+`.env`에 `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`을 넣고 `http://localhost:8501/dispatch/`를 엽니다. 네이버 지도 Web 서비스 URL에는 실제 접속 호스트를 등록해야 합니다. 키가 없거나 외부 호출이 실패해도 합성 좌표와 직선 경로로 전체 데모가 계속 동작합니다.
+
+상담사 AgentStream 연결에는 `AGENTSTREAM_URL`, `AGENTSTREAM_API_KEY`를 설정합니다. 기본 인증은 `Authorization: Bearer <key>`이며 서비스 규격이 다르면 `AGENTSTREAM_AUTH_HEADER`, `AGENTSTREAM_AUTH_SCHEME`을 바꿉니다. 키와 Client Secret은 서버에서만 사용하고 브라우저 응답에 포함하지 않습니다.
+
+## 입력
+
+- `data/as_requests.csv`: `접수ID, 접수일, 주소, 모델, 증상(고객 말), 필요파트, 긴급도`
+- `data/technicians.csv`: `기사ID, 이름, 전문파트`
+- 전문파트를 여러 개 지정할 때는 `구동|조향`처럼 `|`로 구분합니다.
+- 샘플은 나주 인근 합성 접수 20건과 기사 4명입니다. `유압` 접수는 맞는 기사가 없어 미배정되는 사례입니다.
+
+## 단계별 API
+
+1. `POST /api/dispatch/geocode` — 주소→좌표, SQLite 캐시, 주소 오류 수집
+2. `POST /api/dispatch/plan/{runId}` — Haversine×1.3, 40km/h 행렬과 OR-Tools 배차
+3. `POST /api/dispatch/directions/{runId}` — 기사별 최대 1회 Directions 5 호출
+4. 브라우저 지도 표시 — 실제 도로선 또는 `대체 경로` 점선
+
+전체 실행은 `POST /api/dispatch/run`입니다. 상담 채팅은 `POST /api/agentstream/chat`을 사용합니다.
+
+## 검증
+
+```bash
+python3 -m unittest discover -s frontend/dispatch/tests -v
+node --check frontend/app.js && node --check frontend/services.js
+```
+
+`.env`, Geocoding SQLite 캐시, Python 소스, CSV는 FastAPI의 공개 파일 경로에서 제공하지 않습니다.

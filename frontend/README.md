@@ -1,57 +1,46 @@
-# Fieldnote 프론트엔드 데모
+# Fieldnote 해커톤 데모
 
-상담사와 엔지니어가 같은 접수 건을 **하나의 챗봇 대화**에서 이어서 처리하는 정적 프론트엔드입니다. 현재 고객, 사례, 가격은 합성 데이터입니다. AgentStream과 팀 백엔드 API는 연결 전입니다.
-
-이 저장소의 `frontend/`는 사용자가 담당하는 작업을 모으는 폴더입니다. 화면 코드 외에 개발 문서와 스킬 설정도 포함합니다. 새 프로젝트에서는 [작업 인계](HANDOFF.md)와 [작업 범위](AGENTS.md)를 먼저 읽으세요.
+상담사 접수부터 농기계 AS 기사 배차, 현장 완료까지 한 화면에서 시연하는 프런트엔드 중심 프로토타입입니다. 브라우저 UI는 빌드 없는 HTML/CSS/JavaScript이고, 비밀키 보호와 배차 계산을 위한 FastAPI 코드도 `frontend/dispatch/` 안에 둡니다.
 
 ## 실행
 
-저장소 루트에서:
-
 ```bash
-python3 -m http.server 4173 --directory frontend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r frontend/dispatch/requirements.txt && cp -n frontend/dispatch/.env.example frontend/dispatch/.env
+uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 ```
 
-`http://localhost:4173`에서 접속합니다.
+- 상담·현장 화면: `http://localhost:8501/`
+- 배차 지도: `http://localhost:8501/dispatch/`
+- 환경 변수와 단계별 API: [dispatch/README.md](dispatch/README.md)
 
-## 대화 흐름
+## 구현 흐름
 
-1. 상담사는 고객과 장비를 선택하고 통화 내용을 원문에 가깝게 메시지로 입력합니다. 챗봇은 합성 사례에 근거한 기술 답변을 보냅니다.
-2. 통화 종료 전에 방문 요청·주행 불가·자가조치 희망을 별도 항목으로 확정합니다. 종료 후 상담사 채팅은 읽기 전용입니다.
-3. 엔지니어 역할은 초기 기술 진단과 상담 원문 대화를 봅니다.
-4. 챗봇이 `도착` 입력 → 체크리스트 → 수리 계획·부품·가격 → 고객 진행 동의 서명 → 실제 수리 내역 → 전후 사진 → 정상 작동 확인·최종 서명을 순서대로 요청합니다.
-5. 완료 후 같은 접수 건에서 현장 기록을 확인할 수 있습니다.
+1. 상담사가 고객 요청을 원문에 가깝게 채팅합니다.
+2. 브라우저가 `/api/agentstream/chat`을 호출하고 FastAPI가 `.env`의 AgentStream 키로 외부 요청을 보냅니다.
+3. 통화 종료 전 ERP 정보와 방문 요청·주행 불가·자가조치 희망을 확정합니다.
+4. 팀장 화면에서 합성 CSV 접수를 전문 파트가 맞는 기사에게 배정합니다.
+5. Geocoding → OR-Tools → 기사별 Directions 5 1회 → 지도 표시 순서로 처리합니다.
+6. 기사는 체크리스트, 수리 전후 사진, 부품 견적, 수리 동의와 최종 서명을 기록합니다.
 
-## 팀 API 연결 지점
+배차 계산은 Haversine×1.3과 평균 40km/h를 사용합니다. 기사당 최대 5건이고 긴급 건에 더 높은 미배정 penalty를 적용합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다. 전문 파트가 없거나 주소를 확인하지 못한 건은 별도 목록에 표시합니다.
 
-- `services.js`의 비동기 `replyToCounselor()`와 `buildAnalysis()`를 팀 백엔드 호출로 바꿉니다. AgentStream 키는 **백엔드에만** 보관합니다.
-- 분석 응답은 `diagnosis`, `similar[]`(사례 ID·출처 포함), `history[]`, `checklist[]`, `missingInfo[]`, `searchStatus`를 유지합니다. 검색 성공 0건과 검색 실패를 구분합니다.
-- 현재 `loadState()`/`saveState()`는 `localStorage`를 사용하므로 같은 브라우저에서만 공유됩니다. 상담사 PC와 엔지니어 휴대폰에서 같은 접수 건을 열려면 팀 백엔드의 저장·조회 API로 교체해야 합니다.
-- 사진과 서명도 현재 브라우저에 저장됩니다. 실제 배포 전 백엔드 파일 저장과 접근 권한을 연결해야 합니다.
+## 데이터와 보안
 
-공개 시연에는 합성 정보와 시연용 사진·서명만 사용하세요.
+- 지도 입력: `dispatch/data/as_requests.csv`, `dispatch/data/technicians.csv`
+- 주소 캐시: `dispatch/.private/geocoding.sqlite`
+- 비밀키: `dispatch/.env`에만 저장하며 Git과 HTTP 공개 경로에서 제외
+- 공개 저장소에는 `.env.example`만 포함
+- 상담·현장 기록은 현재 같은 브라우저의 `localStorage`에 저장
 
-## 출동 판단 규칙
+제공된 키를 코드, README, 테스트, 커밋에 넣지 마세요. 외부 API가 실패하면 지도는 `대체 경로` 점선으로 계속 동작합니다.
 
-`services.js`의 `decideDispatch()`가 아래 순서로 적용합니다.
+## 검증
 
-1. 고객이 방문을 요청하면 출동합니다.
-2. 장비가 주행 불가이면 출동합니다.
-3. 유사 사례 검색이 **정상 완료되었고 결과가 0건**이면 출동합니다. 자가조치 희망보다 우선합니다.
-4. 유사 사례가 있고 고객이 자가조치를 희망하면 원격 안내로 종료합니다.
-5. 나머지 경우는 상담사가 출동 여부를 선택합니다. 검색 실패도 0건으로 간주하지 않고 `확인 필요`로 표시합니다.
+```bash
+python3 -m unittest discover -s frontend/dispatch/tests -v
+node frontend/tests/workflow.test.mjs
+node --check frontend/app.js && node --check frontend/services.js
+```
 
-## 현재 구현과 다음 작업
-
-| 파일 | 역할 |
-| --- | --- |
-| `index.html`, `style.css` | 반응형 상담사·엔지니어 단일 대화 UI |
-| `app.js` | 상담 원문 보관, 통화 종료 잠금, 엔지니어 단계별 진행, 사진·서명 입력 |
-| `services.js` | 합성 사례 검색, 출동 규칙, 브라우저 저장, 팀 API 연결 함수 |
-
-- **구현됨:** 합성 데이터로 상담 시작부터 최종 고객 서명까지 한 브라우저에서 시연할 수 있습니다.
-- **미연결:** AgentStream 키 발급이 주최 측 오류로 지연되어 실제 사례 검색과 팀 API는 아직 호출하지 않습니다.
-- **팀 연동 시 필요:** 고객·장비 식별자와 사례 응답 형식 합의, 상담/현장 기록 저장·조회 API, 사진·서명 파일 저장, 상담사·엔지니어 접근 권한. 초급 엔지니어 작업 지시는 `checklist[]`로 전달합니다.
-- **검증:** JavaScript 구문 검사, 출동 규칙 확인, 브라우저에서 전체 흐름·새로고침 후 저장·모바일 화면을 확인했습니다. 실제 API와 기기 간 동기화는 검증 전입니다.
-
-새 프로젝트에서는 이 README와 `app.js`·`services.js`를 먼저 읽고, 기존 대화 흐름을 유지하면서 수정해 주세요.
+AgentStream의 실제 호출 URL과 정확한 요청/응답 계약은 주최 측 설정값을 `.env`에 입력해 최종 확인해야 합니다. 현재 프록시는 `message`, `conversation_id`, `history` JSON과 Bearer 인증을 기본 계약으로 사용합니다.
