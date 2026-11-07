@@ -22,12 +22,20 @@ const lines = value => escapeHtml(value).replace(/\n/g, '<br>');
 const date = value => new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric', timeZone:'Asia/Seoul', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const won = value => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(Number(value) || 0);
 const current = () => state.cases.find(item => item.id === state.activeId);
+function engineerWorkCases(engineer=state.selectedEngineer){return state.cases.filter(item=>item.assignedEngineer===engineer&&(item.scheduledToday||item.managerApprovedAt||!['complete','remote-closed'].includes(item.stage)));}
+function selectEngineerWork(){
+  const selected=current();if(selected?.assignedEngineer===state.selectedEngineer)return selected;
+  const candidates=engineerWorkCases().sort((a,b)=>Number(Boolean(b.managerApprovedAt))-Number(Boolean(a.managerApprovedAt))||Number(!['complete','remote-closed'].includes(b.stage))-Number(!['complete','remote-closed'].includes(a.stage))||String(b.assignedAt||b.receivedAt||b.createdAt).localeCompare(String(a.assignedAt||a.receivedAt||a.createdAt)));
+  if(candidates[0])state.activeId=candidates[0].id;
+  return candidates[0]||null;
+}
 let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = `farmingboy-customers-100-v7-relative-seoul-date-${seoulDay(new Date())}`;
-const PRE_DEMO_CLEANUP_VERSION = 'remove-existing-hanjunhui-v1';
+const DEMO_SEED_VERSION = `farmingboy-customers-100-v8-counselor-distribution-${seoulDay(new Date())}`;
+const PRE_DEMO_CLEANUP_VERSION = 'dedupe-existing-hanjunhui-v2';
+const PREVIOUS_CLEANUP_VERSION = 'remove-existing-hanjunhui-v1';
 const MANAGER_PASSWORD = '1234';
 const DEMO_CHOICES = {
   customerName: ['한준희'],
@@ -64,6 +72,7 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null, active =
   const photoCount = (index % 3) + 1;
   const repeat = Boolean(customer._eval?.repeat_within_6m);
   const completedEngineer = assignedEngineer;
+  const counselorName = ['상담사 A', '상담사 B', '상담사 C'][index % 3];
   const item = createCase(customer.customer_id, customer.machine?.model || '파밍보이2.0A');
   Object.assign(item, {
     id: `FARMINGBOY-${customer.customer_id}`,
@@ -74,12 +83,12 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null, active =
     createdAt: receivedAt,
     receivedAt,
     customerRecord: customer,
-    counselorName: '상담사 A',
-    transcript: [{ role: 'counselor', text, authorName: '상담사 A', createdAt: receivedAt }],
+    counselorName,
+    transcript: [{ role: 'counselor', text, authorName: counselorName, createdAt: receivedAt }],
     flags: { visitRequested: true, cannotDrive: false, selfCareWanted: false },
     analysis: { mode: 'demo', searchStatus: 'ok', history: [], similar: [], diagnosis: '팀장 배차용 합성 고객 기록', checklist: [], missingInfo: [], dispatch: { required: true, rule: '팀장 배차 대상', reason: '최근 30일 배차 시연 데이터' } },
     dispatch: { required: true, rule: active ? '최근 30일 배차 대상' : '최근 30일 완료 기록', reason: active ? '오늘 접수와 분리된 배차 대상' : '완료된 고객 이력' },
-    erp: { productName: customer.machine?.model || '파밍보이2.0A', purchaseDate: customer.machine?.purchase_date || '확인 필요', repairHistory: customer.repair_history?.length ? `${customer.repair_history.length}건의 과거 수리 이력` : '없음', confirmedBy: '팀장 데모 데이터', confirmedAt: receivedAt },
+    erp: { productName: customer.machine?.model || '파밍보이2.0A', purchaseDate: customer.machine?.purchase_date || '확인 필요', repairHistory: customer.repair_history?.length ? `${customer.repair_history.length}건의 과거 수리 이력` : '없음', confirmedBy: counselorName, confirmedAt: receivedAt },
     assignedEngineer: todayIntake ? null : completedEngineer,
     scheduledToday: active || todayComplete,
     assignedAt: completedEngineer && !todayIntake ? receivedAt : null,
@@ -159,7 +168,7 @@ async function seedFarmingboyDemo() {
   });
   state.cases = [...demoCases, ...retainedCases];
   state.activeId = retainedActiveId;
-  state.staff = { counselors: ['상담사 A'], engineers };
+  state.staff = { counselors: ['상담사 A', '상담사 B', '상담사 C'], engineers };
   state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0]; state.role = 'counselor';
   state.routePlans = {}; state.demoSeedVersion = DEMO_SEED_VERSION;
   persist();
@@ -171,7 +180,12 @@ function persist() {
 }
 function cleanupExistingDemoCustomer() {
   if(state.preDemoCleanupVersion===PRE_DEMO_CLEANUP_VERSION)return;
-  const removedIds=new Set(state.cases.filter(item=>String(item.customerName||'').replace(/\s/g,'')==='한준희').map(item=>item.id));
+  const hanCases=state.cases.filter(item=>String(item.customerName||'').replace(/\s/g,'')==='한준희');
+  let keepId=null;
+  if(state.preDemoCleanupVersion===PREVIOUS_CLEANUP_VERSION&&hanCases.length){
+    keepId=[...hanCases].sort((a,b)=>Number(Boolean(b.managerApprovedAt||b.assignedEngineer))-Number(Boolean(a.managerApprovedAt||a.assignedEngineer))||Number(b.stage==='complete')-Number(a.stage==='complete')||String(b.receivedAt||b.createdAt).localeCompare(String(a.receivedAt||a.createdAt)))[0].id;
+  }
+  const removedIds=new Set(hanCases.filter(item=>item.id!==keepId).map(item=>item.id));
   state.cases=state.cases.filter(item=>!removedIds.has(item.id));
   if(removedIds.has(state.activeId))state.activeId=null;
   for(const plan of Object.values(state.routePlans||{}))if(Array.isArray(plan?.stops))plan.stops=plan.stops.filter(stop=>!removedIds.has(stop.caseId));
@@ -386,8 +400,9 @@ function render(scrollPosition = 'bottom') {
   $('#role-counselor').setAttribute('aria-pressed', String(state.role === 'counselor'));
   $('#role-engineer').setAttribute('aria-pressed', String(state.role === 'engineer'));
   const todayCases = state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) === seoulDay(new Date()));
-  $('#case-count').textContent = todayCases.length;
-  $('#case-list').innerHTML = todayCases.length ? [...todayCases].sort((a,b) => String(b.receivedAt || b.createdAt).localeCompare(String(a.receivedAt || a.createdAt))).map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.receivedAt || c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">오늘 접수 · ${escapeHtml(c.status)}</span></button>`).join('') : '<p class="empty-cases">오늘 접수된 상담이 없습니다.</p>';
+  const visibleCases=state.role==='engineer'?engineerWorkCases():todayCases;
+  $('#case-count').textContent = visibleCases.length;
+  $('#case-list').innerHTML = visibleCases.length ? [...visibleCases].sort((a,b) => String(b.assignedAt || b.receivedAt || b.createdAt).localeCompare(String(a.assignedAt || a.receivedAt || a.createdAt))).map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.receivedAt || c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">${state.role==='engineer'?'담당 현장':'오늘 접수'} · ${escapeHtml(c.status)}</span></button>`).join('') : `<p class="empty-cases">${state.role==='engineer'?'담당 현장 업무가 없습니다.':'오늘 접수된 상담이 없습니다.'}</p>`;
   $('#conversation').innerHTML = state.role==='manager' ? farmingboyManagerSummary()+managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
   $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
   $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
@@ -437,7 +452,7 @@ async function imageData(file) {
 
 $('#new-case').addEventListener('click', () => { state.activeId = null; state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
-$('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
+$('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; selectEngineerWork(); persist(); render('top'); });
 $('#open-engineer-help').addEventListener('click', () => {
   setEngineerHelp(!engineerHelpOpen);
 });
@@ -664,7 +679,7 @@ function farmingboyManagerSummary() {
     return `<section class="topology-lane"><div class="topology-engineer"><span class="node-icon" aria-hidden="true">${String.fromCharCode(65+index)}</span><div><strong>${escapeHtml(engineer)}</strong><small>${complete} 완료 · ${rows.length-complete} 예정</small></div></div><div class="topology-stops">${stops||'<div class="topology-empty">배정 없음</div>'}</div></section>`;
   }).join('');
   const workload=state.staff.engineers.map((engineer,index)=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);const complete=rows.filter(c=>c.stage==='complete').length;const percent=rows.length?Math.round(complete/rows.length*100):0;return `<div class="workload-row"><div><span class="engineer-dot dot-${index+1}"></span><strong>${escapeHtml(engineer)}</strong><small>${complete}/${rows.length}건 완료</small></div><div class="workload-track"><span style="width:${percent}%"></span></div><b>${percent}%</b></div>`;}).join('');
-  const todaySummary=todayCases.map(c=>{const approved=Boolean(c.managerApprovedAt&&c.assignedEngineer);const canApprove=Boolean(c.dispatch?.required&&c.stage==='awaiting-arrival'&&c.priorityConfirmed&&!approved);return `<article class="manager-intake ${approved?'is-approved':''}"><div class="intake-priority priority-${escapeHtml(c.priority||'normal')}">${priorityLabel(c.priority)}</div><div class="intake-copy"><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.transcript.find(m=>m.role==='counselor')?.text||'상담 요약 없음')}</span><small>${escapeHtml(c.dispatchAddress)}${approved?' · 현장 전달 완료':''}</small></div><label>우선순위<select data-priority-case="${escapeHtml(c.id)}" ${approved?'disabled':''}><option value="high" ${c.priority==='high'?'selected':''}>상</option><option value="normal" ${c.priority==='normal'?'selected':''}>중</option><option value="low" ${c.priority==='low'?'selected':''}>하</option></select></label><div class="manager-intake-actions">${approved?'<span class="assignment-chip">최종 컨펌 완료</span>':`<button type="button" class="ghost-button" data-confirm-priority="${escapeHtml(c.id)}">${c.priorityConfirmed?'우선순위 확정됨':'우선순위 확정'}</button><button type="button" class="primary-button" data-manager-approve="${escapeHtml(c.id)}" ${canApprove?'':'disabled'}>최종 컨펌</button>`}</div></article>`;}).join('');
+  const todaySummary=todayCases.map(c=>{const approved=Boolean(c.managerApprovedAt&&c.assignedEngineer);const canApprove=Boolean(c.dispatch?.required&&c.stage==='awaiting-arrival'&&c.priorityConfirmed&&!approved);return `<article class="manager-intake ${approved?'is-approved':''}"><div class="intake-priority priority-${escapeHtml(c.priority||'normal')}">${priorityLabel(c.priority)}</div><div class="intake-copy"><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.transcript.find(m=>m.role==='counselor')?.text||'상담 요약 없음')}</span><small>${escapeHtml(c.counselorName||'상담사 확인 필요')} · ${escapeHtml(c.dispatchAddress)}${approved?' · 현장 전달 완료':''}</small></div><label>우선순위<select data-priority-case="${escapeHtml(c.id)}" ${approved?'disabled':''}><option value="high" ${c.priority==='high'?'selected':''}>상</option><option value="normal" ${c.priority==='normal'?'selected':''}>중</option><option value="low" ${c.priority==='low'?'selected':''}>하</option></select></label><div class="manager-intake-actions">${approved?'<span class="assignment-chip">최종 컨펌 완료</span>':`<button type="button" class="ghost-button" data-confirm-priority="${escapeHtml(c.id)}">${c.priorityConfirmed?'우선순위 확정됨':'우선순위 확정'}</button><button type="button" class="primary-button" data-manager-approve="${escapeHtml(c.id)}" ${canApprove?'':'disabled'}>최종 컨펌</button>`}</div></article>`;}).join('');
   const events=[...todayCases.map(c=>{if(c.stage==='complete'&&c.completedAt)return {at:c.completedAt,type:'완료',name:c.customerName,detail:'현장 수리 완료 · 사진과 최종 서명 저장',tone:'success'};return {at:c.managerApprovedAt||c.receivedAt||c.createdAt,type:c.managerApprovedAt?'전달':'접수',name:c.customerName,detail:c.managerApprovedAt?'팀장 최종 컨펌 · 현장 전달 완료':`우선순위 ${priorityLabel(c.priority)} · ${c.priorityConfirmed?'우선순위 확정':'확인 대기'}`,tone:c.managerApprovedAt?'success':c.priority==='high'?'alert':'info'};}),...dispatchCases.map(c=>({at:c.completedAt||c.assignedAt||c.receivedAt||c.createdAt,type:c.stage==='complete'?'완료':'방문',name:c.customerName,detail:`${c.assignedEngineer||'배차 대기'} · ${c.stage==='complete'?'현장 수리 완료':'오늘 방문 예정'}`,tone:c.stage==='complete'?'success':'scheduled'}))].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,10);
 
   return `<section class="demo-operations ops-dashboard" aria-label="농기계 AS 통합 관제 대시보드"><header class="ops-dashboard-header"><div><span class="ops-eyebrow">FIELD SERVICE CONTROL</span><h2>농기계 AS 통합 관제</h2><p>오늘 현장 진행과 내일 배차 준비를 분리해 확인합니다.</p></div><div class="ops-live"><span></span><strong>운영 중</strong><small>${today} · 본점 기준</small></div></header><div class="dashboard-stats ops-kpis"><article><span>오늘 접수</span><strong>${todayCases.length}</strong><small>최종 컨펌 ${approvedToday.length}건</small></article><article><span>오늘 수리 예약</span><strong>${dispatchCases.length}</strong><small>기사별 4건</small></article><article><span>현장 완료</span><strong>${completedToday.length}</strong><small>예정 ${scheduledToday.length}건</small></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong><small>우선 확인 ${highPriority}건</small></article></div><section class="field-position-panel"><div class="field-position-heading"><div><span>FIELD PULSE</span><h3>기사별 현재 진행 위치</h3></div><small>GPS가 아닌 최종 서명 시각·방문 주소 기반 진행 추정</small></div><div class="position-grid">${positionCards}</div></section><div class="ops-board"><aside class="ops-panel intake-monitor"><div class="panel-title"><div><span>INTAKE</span><h3>접수 검토 현황</h3></div><b>${confirmedToday.length}/${todayCases.length}</b></div><div class="donut-wrap"><div class="status-donut" style="--progress:${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}"><strong>${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}%</strong><small>우선순위 확정</small></div></div><dl class="monitor-list"><div><dt>우선순위 상</dt><dd class="text-alert">${highPriority}건</dd></div><div><dt>최종 컨펌</dt><dd>${approvedToday.length}건</dd></div><div><dt>검토 대기</dt><dd>${managerQueue.length}건</dd></div></dl><p class="ops-rule">오늘 접수는 오늘 수리 예약과 분리합니다. 우선순위를 확인하고 최종 컨펌하면 현장 단계로 전달됩니다.</p></aside><section class="ops-panel topology-panel"><div class="panel-title"><div><span>WORKFLOW TOPOLOGY</span><h3>오늘 수리 예약 → 최종 서명 → 다음 방문</h3></div><small>오늘 현장 진행</small></div><div class="topology-flow"><div class="topology-source"><div class="flow-node source-node"><span aria-hidden="true">▣</span><strong>오늘 수리 예약</strong><small>${dispatchCases.length}건</small></div><i aria-hidden="true"></i><div class="flow-node manager-node"><span aria-hidden="true">✓</span><strong>최종 서명 완료</strong><small>${completedToday.length}건</small></div><i aria-hidden="true"></i><div class="flow-node hub-node"><span aria-hidden="true">➜</span><strong>현장 진행 중</strong><small>${scheduledToday.length}건 남음</small></div></div><div class="topology-branches">${engineerLanes}</div></div><div class="topology-legend"><span><i class="legend-complete"></i>완료 ${completedToday.length}</span><span><i class="legend-next"></i>다음 방문</span><span><i class="legend-scheduled"></i>이후 예정 ${Math.max(0,scheduledToday.length-state.staff.engineers.length)}</span></div></section><aside class="ops-panel workload-panel"><div class="panel-title"><div><span>ENGINEERS</span><h3>기사별 오늘 처리 현황</h3></div><b>${completedToday.length}/${dispatchCases.length}</b></div><div class="workload-list">${workload}</div><div class="completion-summary"><span>오늘 완료율</span><strong>${dispatchCases.length?Math.round(completedToday.length/dispatchCases.length*100):0}%</strong><small>완료 A·B·C = ${state.staff.engineers.map(engineer=>dispatchCases.filter(c=>c.assignedEngineer===engineer&&c.stage==='complete').length).join(' · ')}건</small></div></aside></div><section class="ops-panel event-panel"><div class="panel-title"><div><span>LIVE EVENTS</span><h3>오늘 운영 이벤트</h3></div><small>최근 ${events.length}건</small></div><div class="event-table"><div class="event-table-head"><span>시간</span><span>구분</span><span>고객</span><span>처리 상태</span></div>${events.map(event=>`<div class="event-row"><time>${date(event.at)}</time><span><i class="event-dot event-${event.tone}"></i>${escapeHtml(event.type)}</span><strong>${escapeHtml(event.name)}</strong><span>${escapeHtml(event.detail)}</span></div>`).join('')}</div></section><section class="ops-panel review-panel"><div class="panel-title"><div><span>MANAGER REVIEW</span><h3>오늘 접수 상담 요약 · 우선순위 및 최종 컨펌</h3></div><small>${todayCases.length}건</small></div><div class="manager-intake-list">${todaySummary}</div></section></section>`;
@@ -703,9 +718,16 @@ function renderPriceMapping() {
 }
 function updateCloseButton(){const form=$('#close-form');if(form)$('#finish-call').disabled=!closeReady(form)||sending;}
 function invalidateRoutes() { for(const [name,plan] of Object.entries(state.routePlans)){if(!state.cases.some(c=>c.assignedEngineer===name && !['complete','remote-closed'].includes(c.stage) && plan.stops.some(stop=>stop.caseId===c.id)))delete state.routePlans[name];} }
+function closeManagerAuth(){const modal=$('#manager-auth-modal');modal.hidden=true;$('#manager-password').value='';$('#manager-auth-error').hidden=true;}
+function openManagerAuth(){const modal=$('#manager-auth-modal');modal.hidden=false;$('#manager-auth-error').hidden=true;setTimeout(()=>$('#manager-password').focus(),0);}
+function enterManager(){state.role='manager';state.closeFormOpen=false;closeManagerAuth();persist();render('top');renderPriceMapping();}
 
-$('#role-manager').addEventListener('click',()=>{if(state.role!=='manager'&&window.prompt('팀장 화면 비밀번호를 입력하세요.')!==MANAGER_PASSWORD){window.alert('팀장 비밀번호가 올바르지 않습니다.');return;}state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
-$('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer')state.selectedEngineer=event.target.value;persist();render('top');});
+$('#role-manager').addEventListener('click',()=>{if(state.role==='manager')return;openManagerAuth();});
+$('#manager-auth-form').addEventListener('submit',event=>{event.preventDefault();if($('#manager-password').value!==MANAGER_PASSWORD){$('#manager-auth-error').hidden=false;$('#manager-password').select();return;}enterManager();});
+$('#manager-auth-cancel').addEventListener('click',closeManagerAuth);
+$('#manager-auth-modal').addEventListener('pointerdown',event=>{if(event.target.id==='manager-auth-modal')closeManagerAuth();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#manager-auth-modal').hidden)closeManagerAuth();});
+$('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer'){state.selectedEngineer=event.target.value;selectEngineerWork();}persist();render('top');});
 $('#conversation').addEventListener('change',event=>{
   if(event.target.id==='performance-period'){performanceDays=Number(event.target.value);const panel=$('.performance-panel');if(panel)panel.outerHTML=performanceView();}
   if(event.target.closest('#close-form'))updateCloseButton();
@@ -778,6 +800,7 @@ async function bootstrap() {
     cleanupExistingDemoCustomer();
     await seedFarmingboyDemo();
     if (state.role === 'manager') { state.role = 'counselor'; persist(); }
+    if (state.role === 'engineer') { selectEngineerWork(); persist(); }
     render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
     renderPriceMapping();
   } catch (error) {
