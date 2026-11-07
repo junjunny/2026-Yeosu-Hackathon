@@ -7,10 +7,12 @@ import { readPriceWorkbook, catalogFromRows } from './price-import.js';
 import { managerAccess } from './manager-access.js';
 import { dashboardStats, durationMinutes, closeReady } from './dashboard.js';
 
+import { technicianPerformance } from './performance.js';
 import { makeDemoCases } from './demo-cases.js';
 
 const state = migrateState(loadState());
 let managerAuthorized = false;
+let performanceDays = 30;
 let priceSheets = [];
 let priceFileName = '';
 let routeBusy = false;
@@ -142,7 +144,7 @@ function renderDetails() {
 
 function render(scrollPosition = 'bottom') {
   const item = current();
-  $('#page-title').textContent = state.role === 'manager' ? '팀장 배정·동선' : item ? `${item.customerName} 상담` : '새 상담';
+  $('#page-title').textContent = state.role === 'manager' ? '팀장 대시보드' : item ? `${item.customerName} 상담` : '새 상담';
   $('#thread-id').textContent = item?.id || '새 접수';
   $('#thread-status').textContent = statusText(item);
   $('#case-count').textContent = state.cases.length;
@@ -206,6 +208,7 @@ $('#role-counselor').addEventListener('click', () => { state.role = 'counselor';
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
+  const evidence=event.target.closest('[data-evidence-id]');if(evidence){state.activeId=evidence.dataset.evidenceId;state.role='engineer';const c=current();if(c?.assignedEngineer)state.selectedEngineer=c.assignedEngineer;persist();render('top');return;}
   if (event.target.id === 'open-close') { state.closeFormOpen = true; render(); }
   if (event.target.id === 'cancel-close') { state.closeFormOpen = false; render(); }
   if (event.target.classList.contains('signature-clear')) { const canvas = $('.signature-pad'); canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); signatureHasInk = false; }
@@ -214,7 +217,7 @@ $('#conversation').addEventListener('click', event => {
 $('#conversation').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target;
-  if(['origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) || form.classList.contains('assignment-form')) return;
+  if(['manager-login-form','origin-form','staff-form','catalog-file-form','catalog-map-form'].includes(form.id) || form.classList.contains('assignment-form')) return;
   const data = new FormData(form); const item = current();
   if (form.id === 'start-form') {
     const customerName=String(data.get('customerName')).trim(); const registeredAddress=String(data.get('registeredAddress')).trim();
@@ -350,11 +353,15 @@ function priceImportView() {
   return `<form id="catalog-map-form" class="stage-form"><h4>${escapeHtml(priceFileName)} · 열 확인</h4><label>시트<select id="price-sheet" name="sheet">${priceSheets.map((sheet,i)=>`<option value="${i}">${escapeHtml(sheet.name)}</option>`).join('')}</select></label><div id="price-mapping"></div><button class="primary-button" type="submit">가격표 확인 · 등록</button></form>`;
 }
 function managerView() {
-  if(!managerAuthorized)return '<div class="waiting-box"><h2>팀장 전용 대시보드</h2><p>팀장 계정 인증이 필요합니다. 인증 서비스 연결 후 접근할 수 있습니다.</p></div>';
+  if(!managerAuthorized)return `<form id="manager-login-form" class="stage-form card manager-login"><h2>팀장 전용 대시보드</h2><p>관리자 비밀번호를 입력해 주세요.</p><label>비밀번호<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label><button class="primary-button" type="submit">대시보드 로그인</button><p class="login-status" role="alert"></p></form>`;
   const {done,todo}=dashboardStats(state.cases);
   const queue=pendingCases().filter(c=>!c.assignedEngineer);
   const collecting=state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage));
-  return `<div class="manager-view"><h2>오늘의 현장 운영</h2><p>로그인 없는 합성 데이터 시연 모드입니다.</p><a class="primary-button" href="./dispatch/">전문파트·일일 5건 기준 지도 배차 데모 열기</a><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><h3>기사별 이동 · 위치 기록</h3><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+  return `<div class="manager-view"><h2>오늘의 현장 운영</h2><div class="manager-heading"><p>본사: 전남 나주시 왕곡면 혁신산단6길 9 · 모든 기사 본사 출발·복귀</p><button id="manager-logout" type="button" class="ghost-button">관리자 로그아웃</button></div><h3>상담·현장 실적 <small>저장된 상담 기록 기준</small></h3><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><section class="manager-map"><iframe title="오늘의 AS 배차 지도와 기사별 방문 순서" src="./dispatch/?embedded=1" loading="eager"></iframe></section><details class="manager-history"><summary>기사별 이동 · 위치 기록</summary><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
+}
+function performanceView() {
+  const rows=technicianPerformance(state.cases,state.staff.engineers,performanceDays);
+  return `<section class="performance-panel"><div class="performance-heading"><div><h3>기사별 업무 실적 · 평가 참고</h3><p>완료 기록과 현장 증빙을 바탕으로 면담·평가를 준비합니다.</p></div><label>조회 기간<select id="performance-period">${[[1,'오늘'],[7,'최근 7일'],[30,'최근 30일']].map(([days,label])=>`<option value="${days}" ${days===performanceDays?'selected':''}>${label}</option>`).join('')}</select></label></div><p class="performance-context">현장 경과시간은 도착부터 최종 서명까지이며 대기·점검·수리 시간이 포함됩니다. 접수 난이도, 현장 대기시간, 이동거리와 함께 비교하세요. 자동 점수·순위는 산출하지 않습니다.</p><div class="table-scroll"><table><thead><tr><th>기사</th><th>완료 건수</th><th>평균 현장 경과</th><th>시간 기록</th><th>청구액 합계</th><th>수리 동의/최종 서명</th><th>전후 사진</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.count}건</td><td>${r.averageMinutes==null?'—':r.averageMinutes+'분'}</td><td>${r.timeCount}건 · 누락 ${r.missingTime}건</td><td>${r.quotedCount?won(r.quoted):'—'}<small>견적 ${r.quotedCount}건 기준</small></td><td>${r.approvalCount} / ${r.signatureCount}건</td><td>${r.photoCount} / ${r.count}건</td></tr>`).join('')}</tbody></table></div><p class="performance-context">청구액은 수금·매출 확정액이 아닙니다. 고객 만족도·재수리율·작업 난이도는 아직 수집하지 않습니다. 기록이 없는 기사는 실적 부족으로 판단하지 않습니다.</p><details><summary>평가 근거 접수 기록 보기</summary>${rows.map(r=>`<div class="evidence-row"><strong>${escapeHtml(r.name)}</strong>${r.records.length?`<ul>${r.records.map(c=>`<li><button type="button" class="evidence-case" data-evidence-id="${escapeHtml(c.id)}">${escapeHtml(c.id)}</button> · ${escapeHtml(c.customerName)} · ${date(c.completedAt)} · ${escapeHtml(c.erp?.productName||c.equipmentId||'제품 확인 필요')}</li>`).join('')}</ul>`:'<p>해당 기간의 저장된 완료 기록이 없습니다.</p>'}</div>`).join('')}</details><small>출처: 이 브라우저에 저장된 현장 완료 기록. 지도 배차 CSV는 예정 업무이며 완료 실적으로 집계하지 않습니다.</small></section>`;
 }
 function engineerTimeline(engineer) {
   const active=state.cases.filter(c=>c.assignedEngineer===engineer && !['complete','remote-closed'].includes(c.stage));
@@ -377,9 +384,18 @@ function renderPriceMapping() {
 function updateCloseButton(){const form=$('#close-form');if(form)$('#finish-call').disabled=!closeReady(form)||sending;}
 function invalidateRoutes() { for(const [name,plan] of Object.entries(state.routePlans)){if(!state.cases.some(c=>c.assignedEngineer===name && !['complete','remote-closed'].includes(c.stage) && plan.stops.some(stop=>stop.caseId===c.id)))delete state.routePlans[name];} }
 
+$('#conversation').addEventListener('submit',async event=>{
+  if(event.target.id!=='manager-login-form')return;
+  event.preventDefault();const form=event.target,button=form.querySelector('button');button.disabled=true;
+  try{const response=await fetch(new URL('./api/manager/login',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:new FormData(form).get('password')})});if(!response.ok){const body=await response.json();throw new Error(body.detail||'로그인에 실패했습니다.');}managerAuthorized=await managerAccess();if(!managerAuthorized)throw new Error('관리자 세션을 확인해 주세요.');render('top');}
+  catch(error){form.querySelector('.login-status').textContent=error.message;}
+  finally{if(button.isConnected)button.disabled=false;}
+});
+$('#conversation').addEventListener('click',async event=>{if(event.target.id!=='manager-logout')return;await fetch(new URL('./api/manager/logout',location.href),{method:'POST'});managerAuthorized=false;render('top');});
 $('#role-manager').addEventListener('click',async()=>{managerAuthorized=await managerAccess();state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
 $('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer')state.selectedEngineer=event.target.value;persist();render('top');});
 $('#conversation').addEventListener('change',event=>{
+  if(event.target.id==='performance-period'){performanceDays=Number(event.target.value);const panel=$('.performance-panel');if(panel)panel.outerHTML=performanceView();}
   if(event.target.closest('#close-form'))updateCloseButton();
   if(event.target.id==='batch-ready')$('#batch-assign').disabled=!event.target.checked||routeBusy;
   if(event.target.id==='incident-type' || event.target.id==='insurance-repair') {
@@ -448,3 +464,5 @@ $('#conversation').addEventListener('submit',async event=>{
 render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
 renderPriceMapping();
 
+
+if(state.role==='manager')managerAccess().then(allowed=>{managerAuthorized=allowed;render('top');});

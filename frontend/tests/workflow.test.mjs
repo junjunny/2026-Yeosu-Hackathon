@@ -81,3 +81,9 @@ test('최적화된 동선 그룹을 서로 다른 기사에 무작위 연결하�
     globalThis.fetch=async()=>({ok:true,json:async()=>({routes:[{stops:[{caseId:'A',distanceMeters:1,durationSeconds:1}]}]})});await assert.rejects(planBatch('출발지',cases,['기사 A','기사 B']),/확인할 수 없습니다/);
   }finally{globalThis.fetch=original;routeConfig.batchEndpoint='';}
 });
+const {technicianPerformance}=await import('../performance.js');
+test('실적 집계는 완료 기록만 사용하고 누락 시간·견적·증빙을 구분',()=>{
+ const cases=[{id:'C1',stage:'complete',assignedEngineer:'기사 A',completedAt:'2026-11-07T01:00:00Z',arrivedAt:'2026-11-07T00:00:00Z',repairPlan:{parts:[{qty:2,unitPrice:10000}],travelFee:33000},approvalSignature:{},finalSignature:{},beforePhotos:['a'],afterPhotos:['b']},{id:'C2',stage:'complete',assignedEngineer:'기사 A',completedAt:'2026-11-07T02:00:00Z'},{id:'C3',stage:'checklist',assignedEngineer:'기사 A',createdAt:'2026-11-07T00:00:00Z'},{id:'OLD',stage:'complete',assignedEngineer:'기사 A',completedAt:'2026-10-01T00:00:00Z'}];
+ const rows=technicianPerformance(cases,['기사 A','기사 B'],7,new Date('2026-11-07T05:00:00Z'));
+ assert.equal(rows[0].count,2);assert.equal(rows[0].averageMinutes,60);assert.equal(rows[0].missingTime,1);assert.equal(rows[0].quoted,53000);assert.equal(rows[0].quotedCount,1);assert.equal(rows[0].signatureCount,1);assert.equal(rows[0].photoCount,1);assert.equal(rows[1].averageMinutes,null);assert.equal(rows[1].count,0);assert.deepEqual(rows[0].records.map(c=>c.id),['C1','C2']);
+});

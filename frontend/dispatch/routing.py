@@ -6,24 +6,19 @@ from .maps import haversine
 def solve(origin, jobs, technicians, factor=1.3, speed=40, capacity=5, seconds=2):
     if not technicians:
         return {'routes': [], 'unassigned': [{**j, 'reason': '기사 없음'} for j in jobs]}
-    eligible, unassigned = [], []
-    for job in jobs:
-        allowed = [i for i, tech in enumerate(technicians) if job['requiredPart'] in tech['specialties']]
-        if allowed:
-            eligible.append((job, allowed))
-        else:
-            unassigned.append({**job, 'reason': '필요 파트에 맞는 기사 없음'})
+    eligible = [(job, list(range(len(technicians)))) for job in jobs]
+    unassigned = []
     if not eligible:
-        return {'routes': [{'technician': t, 'jobs': []} for t in technicians], 'unassigned': unassigned}
+        return {'routes': [{'technician': t, 'jobs': []} for t in technicians], 'unassigned': []}
     points = [origin] + [job['coordinates'] for job, _ in eligible]
     matrix = [[round(haversine(a,b)*factor/(speed*1000/3600)) for b in points] for a in points]
-    # Each vehicle ends at its own dummy sink, with zero cost after the last visit.
+    # Closed CVRP: every vehicle starts and ends at the fixed headquarters.
     n, vehicles = len(points), len(technicians)
-    manager = pywrapcp.RoutingIndexManager(n+vehicles, vehicles, [0]*vehicles, list(range(n,n+vehicles)))
+    manager = pywrapcp.RoutingIndexManager(n, vehicles, 0)
     routing = pywrapcp.RoutingModel(manager)
     def transit(a, b):
         start, end = manager.IndexToNode(a), manager.IndexToNode(b)
-        return 0 if end >= n or start >= n else matrix[start][end]
+        return matrix[start][end]
     callback = routing.RegisterTransitCallback(transit)
     routing.SetArcCostEvaluatorOfAllVehicles(callback)
     demand = routing.RegisterUnaryTransitCallback(lambda index: int(0 < manager.IndexToNode(index) < n))
@@ -54,5 +49,5 @@ def solve(origin, jobs, technicians, factor=1.3, speed=40, capacity=5, seconds=2
                 assigned.add(job['id'])
             index = solution.Value(routing.NextVar(index))
         routes.append({'technician': tech, 'jobs': ordered})
-    unassigned += [{**j, 'reason': '일일 5건 한도·전문파트·긴급도 반영 후 미배정'} for j, _ in eligible if j['id'] not in assigned]
+    unassigned += [{**j, 'reason': '일일 5건 한도·긴급도 반영 후 미배정'} for j, _ in eligible if j['id'] not in assigned]
     return {'routes': routes, 'unassigned': unassigned}

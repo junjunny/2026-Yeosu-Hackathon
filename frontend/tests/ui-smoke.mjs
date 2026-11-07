@@ -7,13 +7,14 @@ import * as workflow from '../workflow.js';
 import * as routing from '../route-provider.js';
 import * as prices from '../price-import.js';
 import * as access from '../manager-access.js';
+import {technicianPerformance} from '../performance.js';
 import * as dashboard from '../dashboard.js';
 import {makeDemoCases} from '../demo-cases.js';
 const require=createRequire(process.env.FIELDNOTE_QA_PACKAGE || import.meta.url);
 const {JSDOM}=require('jsdom');
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const w=dom.window;
-Object.assign(w,services,workflow,routing,prices,access,dashboard,{makeDemoCases,structuredClone,AbortController});
+Object.assign(w,services,workflow,routing,prices,access,dashboard,{makeDemoCases,technicianPerformance,structuredClone,AbortController});
 globalThis.localStorage=w.localStorage;globalThis.DOMParser=w.DOMParser;
 w.alert=message=>{throw new Error(message);};
 w.HTMLCanvasElement.prototype.getContext=()=>({scale(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},clearRect(){},drawImage(){}});
@@ -37,11 +38,11 @@ await click('#open-close');assert.ok($('.insurance-field').hidden);set('incident
 for(const name of ['visitRequested','cannotDrive','selfCareWanted'])$(`[name="${name}"][value="yes"]`).checked=true;
 set('manualChoice','no');set('priority','high');assert.equal($('#finish-call').disabled,true);set('productName','시연 제품');set('purchaseDate','2024년 3월');set('repairHistory','2025년 배터리 점검');assert.equal($('#finish-call').disabled,false);await submit('#close-form');assert.equal(item().stage,'awaiting-arrival');assert.equal(item().dispatch.required,true);assert.equal(w.document.querySelector('#counselor-chat'),null);assert.equal(item().insuranceEnrolled,'yes');
 assert.equal(item().erp.productName,'시연 제품');assert.equal(w.document.querySelector('#erp-form'),null);
-access.accessConfig.demoMode=false;await click('#role-manager');assert.match($('#conversation').textContent,/팀장 계정 인증/);assert.equal(w.document.querySelector('#batch-assign'),null);
+access.accessConfig.demoMode=false;await click('#role-manager');assert.match($('#conversation').textContent,/관리자 비밀번호/);assert.equal(w.document.querySelector('#batch-assign'),null);
 access.accessConfig.sessionEndpoint='/api/session';routing.routeConfig.batchEndpoint='/api/batch';
 globalThis.fetch=async(url)=>url==='/api/session'?{ok:true,json:async()=>({authenticated:true,role:'manager'})}:{ok:true,json:async()=>({source:'합성 지도 검증',routes:[{stops:[{caseId:item().id,distanceMeters:1000,durationSeconds:300}]}]})};
 await click('#role-manager');assert.ok($('.dashboard-stats'));assert.equal(w.document.querySelector('.assignment-form'),null);
-assert.ok(w.document.querySelector('a[href="./dispatch/"]'));item().assignedEngineer='엔지니어 B';w.testState.routePlans['엔지니어 B']={stops:[{caseId:item().id,distanceMeters:1000,durationSeconds:300}]};
+assert.ok(w.document.querySelector('iframe[src="./dispatch/?embedded=1"]'));assert.ok(w.document.querySelector('.performance-panel'));item().assignedEngineer='엔지니어 B';w.testState.routePlans['엔지니어 B']={stops:[{caseId:item().id,distanceMeters:1000,durationSeconds:300}]};
 await click('#role-engineer');$('#staff-select').value=item().assignedEngineer;$('#staff-select').dispatchEvent(new w.Event('change',{bubbles:true}));
 set('text','도착');await submit('#arrival-form');assert.equal(item().stage,'checklist');assert.ok(w.testState.routePlans[item().assignedEngineer]);
 for(const keyword of ['브레이크','타이어','멈췄'])assert.ok(item().analysis.checklist.some(s=>s.includes(keyword)));
@@ -55,7 +56,7 @@ fileOverrides['photos-form']={afterPhotos:[{size:10,type:'image/png'},{size:10,t
 $('[name="consent"]').checked=true;set('typedName','시연 고객');await submit('#verification-form');assert.equal(item().stage,'final-verification');assert.match($('.form-error').textContent,/개인정보/);$('[name="privacyRead"]').checked=true;await submit('#verification-form');assert.equal(item().stage,'complete');assert.ok(item().approvalSignature);assert.ok(item().finalSignature);assert.equal(item().repairFulfilled,true);assert.equal(item().privacyAcknowledged,true);assert.equal(w.document.querySelectorAll('.photo-gallery img').length,4);
 assert.equal(JSON.parse(w.localStorage.getItem('yeosu-fieldnote-chat-v2')).cases[0].stage,'complete');assert.deepEqual(errors,[]);
 // Re-open saved state with the actual migration and rendering code.
-const saved=w.localStorage.getItem('yeosu-fieldnote-chat-v2');const restored=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const rw=restored.window;rw.localStorage.setItem('yeosu-fieldnote-chat-v2',saved);globalThis.localStorage=rw.localStorage;Object.assign(rw,services,workflow,routing,prices,access,dashboard,{makeDemoCases,structuredClone,AbortController});rw.eval(source);assert.equal(rw.document.querySelectorAll('.photo-gallery img').length,4);assert.match(rw.document.querySelector('.completion-card').textContent,/수리 이행 확인/);
+const saved=w.localStorage.getItem('yeosu-fieldnote-chat-v2');const restored=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const rw=restored.window;rw.localStorage.setItem('yeosu-fieldnote-chat-v2',saved);globalThis.localStorage=rw.localStorage;Object.assign(rw,services,workflow,routing,prices,access,dashboard,{makeDemoCases,technicianPerformance,structuredClone,AbortController});rw.eval(source);assert.equal(rw.document.querySelectorAll('.photo-gallery img').length,4);assert.match(rw.document.querySelector('.completion-card').textContent,/수리 이행 확인/);
 console.log('PASS: 상담 → 보험 조건 → ERP 입력 전 종료 차단 → 통화 잠금 → 팀장 권한 차단 → 일괄 배정 → 기사 선택 → 필수 점검 → 수리 전 사진 2장 → 가격표 누락 차단 → 견적 → 동의 → 수리 후 사진 2장 → 개인정보 확인·최종 서명 → 저장 복원');
 const workbook=await readFile(new URL('./fixtures/synthetic-prices.xlsx',import.meta.url));
 const fixtureFile={name:'synthetic-prices.xlsx',size:workbook.length,arrayBuffer:async()=>workbook.buffer.slice(workbook.byteOffset,workbook.byteOffset+workbook.byteLength)};

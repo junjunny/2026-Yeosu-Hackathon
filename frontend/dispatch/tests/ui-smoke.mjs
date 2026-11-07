@@ -6,7 +6,7 @@ const result=JSON.parse(await readFile('/tmp/fieldnote-dispatch-result.json','ut
 const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'http://localhost:8501/dispatch/',runScripts:'outside-only'});const w=dom.window;
 const calls=[];w.AbortSignal=AbortSignal;
-w.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>url.endsWith('config')?{clientId:''}:{...result,runId:'TEST'}};};
+w.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>url.endsWith('config')?{clientId:'',hqAddress:'전라남도 나주시 왕곡면 혁신산단6길 9',hqCoordinates:[126.6928956,34.969903]}:{...result,runId:'TEST'}};};
 w.eval(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 w.document.getElementById('run').click();await new Promise(r=>setTimeout(r,50));
 assert.equal(w.document.getElementById('total').textContent,'20');assert.equal(w.document.querySelectorAll('.card').length,4);

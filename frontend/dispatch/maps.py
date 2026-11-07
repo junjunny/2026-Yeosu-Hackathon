@@ -45,9 +45,8 @@ class Maps:
     def directions(self, origin, stops):
         if not stops or len(stops) > 5:
             raise ValueError('방문지는 1~5개 필요')
-        params = {'start': ','.join(map(str, origin)), 'goal': ','.join(map(str, stops[-1])), 'option': 'trafast'}
-        if len(stops) > 1:
-            params['waypoints'] = '|'.join(','.join(map(str, point)) for point in stops[:-1])
+        params = {'start': ','.join(map(str, origin)), 'goal': ','.join(map(str, origin)), 'option': 'trafast'}
+        params['waypoints'] = '|'.join(','.join(map(str, point)) for point in stops)
         response = self.client.get(f'https://{self.host}/map-direction/v1/driving', params=params, headers=self.headers())
         response.raise_for_status()
         result = response.json()
@@ -69,6 +68,6 @@ def haversine(a, b):
 
 
 def fallback_route(origin, jobs, factor=1.3, speed=40):
-    points = [origin] + [job['coordinates'] for job in jobs]
+    points = [origin] + [job['coordinates'] for job in jobs] + ([origin] if jobs else [])
     distance = sum(haversine(a, b)*factor for a, b in zip(points, points[1:]))
     return {'path': points, 'distanceMeters': distance, 'durationSeconds': distance/(speed*1000/3600), 'fallback': True, 'label': '대체 경로 · 보정 직선거리'}
