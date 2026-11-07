@@ -3,6 +3,7 @@ import { loadState, saveState, createCase, replyToCounselor, buildAnalysis, unav
 import { migrateState, customerChecklist, travelFee, parseParts, estimateTotal } from './workflow.js';
 import { planBatch, routeConfig } from './route-provider.js';
 import { readPriceWorkbook, catalogFromRows } from './price-import.js';
+import { defaultCatalog, catalogSource } from './parts-catalog.js';
 
 import { dashboardStats, durationMinutes, closeReady, seoulDay } from './dashboard.js';
 
@@ -23,13 +24,27 @@ let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = 'farmingboy-customers-100-v2';
+const DEMO_SEED_VERSION = 'farmingboy-customers-100-v3';
+const MANAGER_PASSWORD = '1234';
 
-function demoCaseFromCustomer(customer, index, assignedEngineer = null) {
+function demoPhoto(label, index, after = false) {
+  const colors = after ? ['#dff5e9', '#e7efff', '#fff0d9'] : ['#eef1ff', '#f3e9ff', '#e8f5f5'];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420"><rect width="100%" height="100%" fill="${colors[index % colors.length]}"/><text x="50%" y="48%" text-anchor="middle" font-family="Arial" font-size="30" fill="#52617a">${label}</text><text x="50%" y="60%" text-anchor="middle" font-family="Arial" font-size="18" fill="#8795aa">합성 현장 사진</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function demoCaseFromCustomer(customer, index, assignedEngineer = null, active = false) {
   const job = customer.current_job || {};
   const receivedAt = job.received_at || new Date(Date.now() - index * 86400000).toISOString();
-  const active = Boolean(assignedEngineer);
   const text = job.request_text || '농기계 점검과 수리를 요청합니다.';
+  const repairMinutes = [45, 60, 75, 90, 120, 150][index % 6];
+  const completedAt = job.completed_at || new Date(Date.parse(receivedAt) + repairMinutes * 60000).toISOString();
+  const arrivedAt = new Date(Date.parse(completedAt) - repairMinutes * 60000).toISOString();
+  const catalogPart = defaultCatalog[index % defaultCatalog.length];
+  const travelFee = [33000, 55000, 77000, 100000][index % 4];
+  const photoCount = (index % 3) + 1;
+  const repeat = Boolean(customer._eval?.repeat_within_6m);
+  const completedEngineer = assignedEngineer;
   const item = createCase(customer.customer_id, customer.machine?.model || '파밍보이2.0A');
   Object.assign(item, {
     id: `FARMINGBOY-${customer.customer_id}`,
@@ -46,13 +61,22 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null) {
     analysis: { mode: 'demo', searchStatus: 'ok', history: [], similar: [], diagnosis: '팀장 배차용 합성 고객 기록', checklist: [], missingInfo: [], dispatch: { required: true, rule: '팀장 배차 대상', reason: '최근 30일 배차 시연 데이터' } },
     dispatch: { required: true, rule: active ? '최근 30일 배차 대상' : '최근 30일 완료 기록', reason: active ? '오늘 접수와 분리된 배차 대상' : '완료된 고객 이력' },
     erp: { productName: customer.machine?.model || '파밍보이2.0A', purchaseDate: customer.machine?.purchase_date || '확인 필요', repairHistory: customer.repair_history?.length ? `${customer.repair_history.length}건의 과거 수리 이력` : '없음', confirmedBy: '팀장 데모 데이터', confirmedAt: receivedAt },
-    assignedEngineer,
-    assignedAt: active ? receivedAt : null,
+    assignedEngineer: completedEngineer,
+    assignedAt: completedEngineer ? receivedAt : null,
     stage: active ? 'awaiting-arrival' : 'complete',
     status: active ? '배차 대상 · 오늘 수리 아님' : '작업 완료',
-    completedAt: active ? null : (job.completed_at || receivedAt),
-    closedAt: active ? null : (job.completed_at || receivedAt),
-    repairNotes: active ? '' : '첨부된 최근 30일 완료 이력',
+    priority: repeat ? 'high' : 'normal',
+    priorityReason: repeat ? '최근 6개월 동일 부품 수리 이력' : '일반 접수',
+    arrivedAt: active ? null : arrivedAt,
+    completedAt: active ? null : completedAt,
+    closedAt: active ? null : completedAt,
+    onsiteMinutes: active ? null : repairMinutes,
+    repairNotes: active ? '' : `합성 완료 기록 · ${catalogPart.name} 교체 및 작동 재시험 완료`,
+    repairPlan: active ? null : { details: `현장 점검 후 ${catalogPart.name} 교체`, parts: [{ id: catalogPart.id, name: catalogPart.name, qty: 1, unitPrice: catalogPart.retailPrice + catalogPart.laborPrice, retailPrice: catalogPart.retailPrice, laborPrice: catalogPart.laborPrice }], travelFee, region: travelFee === 33000 ? 'naju' : 'jeonnam', distanceKm: travelFee === 33000 ? 12 : travelFee === 55000 ? 42 : travelFee === 77000 ? 78 : 120, catalogSource, quotedAt: completedAt },
+    beforePhotos: active ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 전 ${photoIndex + 1}`, index + photoIndex)),
+    afterPhotos: active ? [] : Array.from({ length: photoCount }, (_, photoIndex) => demoPhoto(`수리 후 ${photoIndex + 1}`, index + photoIndex, true)),
+    approvalSignature: active ? null : { typedName: customer.name, signedAt: new Date(Date.parse(arrivedAt) + Math.round(repairMinutes * 0.35) * 60000).toISOString(), image: null },
+    finalSignature: active ? null : { typedName: customer.name, signedAt: completedAt, image: null },
     fieldLog: [],
     positionEvents: []
   });
@@ -78,7 +102,9 @@ async function seedFarmingboyDemo() {
   const dispatchCustomers = [...recent7.filter(customer => recent7Ids.has(customer.customer_id)), ...sorted.filter(customer => !recent7Ids.has(customer.customer_id))]
     .slice(0, engineers.length * 4);
   const assigned = new Map(dispatchCustomers.map((customer, index) => [customer.customer_id, engineers[Math.floor(index / 4)]]));
-  state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null));
+  const completed = customers.filter(customer => !assigned.has(customer.customer_id));
+  completed.forEach((customer, index) => assigned.set(customer.customer_id, engineers[index % engineers.length]));
+  state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null, dispatchCustomers.some(item => item.customer_id === customer.customer_id)));
   state.staff = { counselors: ['상담사 A'], engineers };
   state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0];
   state.routePlans = {}; state.demoSeedVersion = DEMO_SEED_VERSION;
@@ -427,8 +453,9 @@ function farmingboyManagerSummary() {
   const today=seoulDay(new Date());
   const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>='2026-10-09');
   const dispatchCases=state.cases.filter(c=>c.assignedEngineer&&c.stage==='awaiting-arrival');
+  const managerQueue=state.cases.filter(c=>c.stage==='awaiting-arrival'&&!c.assignedEngineer);
   const cards=state.staff.engineers.map(engineer=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt||c.createdAt)} · 오늘 수리 아님</small></li>`).join('')||'<li>배정된 고객 없음</li>'}</ol></article>`;}).join('');
-  return `<section class="demo-operations"><div class="manager-heading"><p>최근 30일 고객 ${recent30.length}명 · 오늘 접수는 오늘 수리로 자동 배정하지 않습니다.</p></div><div class="dashboard-stats"><article><span>오늘 접수</span><strong>${state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today).length}</strong></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong></article><article><span>오늘 배차 대상</span><strong>${dispatchCases.length}</strong><small>엔지니어 3명 × 4건</small></article></div><h3>오늘 배차 대상 · 12명</h3><div class="route-grid">${cards}</div></section>`;
+  return `<section class="demo-operations"><div class="manager-heading"><p>최근 30일 고객 ${recent30.length}명 · 오늘 접수는 오늘 수리로 자동 배정하지 않습니다.</p></div><div class="dashboard-stats"><article><span>오늘 접수</span><strong>${state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today).length}</strong></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong></article><article><span>오늘 배차 대상</span><strong>${dispatchCases.length}</strong><small>엔지니어 3명 × 4건</small></article></div><h3>오늘 배차 대상 · ${dispatchCases.length}명</h3><div class="route-grid">${cards}</div>${managerQueue.length?`<h3>상담 완료 · 팀장 확인/배차 대기 ${managerQueue.length}건</h3><ul class="manager-queue">${managerQueue.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong> · ${escapeHtml(c.dispatchAddress)} · 우선순위 ${priorityLabel(c.priority)}</li>`).join('')}</ul>`:''}</section>`;
 }
 function managerView() {
   const {done,todo}=dashboardStats(state.cases);
@@ -464,7 +491,7 @@ function renderPriceMapping() {
 function updateCloseButton(){const form=$('#close-form');if(form)$('#finish-call').disabled=!closeReady(form)||sending;}
 function invalidateRoutes() { for(const [name,plan] of Object.entries(state.routePlans)){if(!state.cases.some(c=>c.assignedEngineer===name && !['complete','remote-closed'].includes(c.stage) && plan.stops.some(stop=>stop.caseId===c.id)))delete state.routePlans[name];} }
 
-$('#role-manager').addEventListener('click',()=>{state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
+$('#role-manager').addEventListener('click',()=>{if(state.role!=='manager'&&window.prompt('팀장 화면 비밀번호를 입력하세요.')!==MANAGER_PASSWORD){window.alert('팀장 비밀번호가 올바르지 않습니다.');return;}state.role='manager';state.closeFormOpen=false;persist();render('top');renderPriceMapping();});
 $('#staff-select').addEventListener('change',event=>{if(state.role==='counselor')state.selectedCounselor=event.target.value;else if(state.role==='engineer')state.selectedEngineer=event.target.value;persist();render('top');});
 $('#conversation').addEventListener('change',event=>{
   if(event.target.id==='performance-period'){performanceDays=Number(event.target.value);const panel=$('.performance-panel');if(panel)panel.outerHTML=performanceView();}
@@ -536,6 +563,7 @@ $('#conversation').addEventListener('submit',async event=>{
 async function bootstrap() {
   try {
     await seedFarmingboyDemo();
+    if (state.role === 'manager') { state.role = 'counselor'; persist(); }
     render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
     renderPriceMapping();
   } catch (error) {
