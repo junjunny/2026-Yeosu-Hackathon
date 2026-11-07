@@ -23,8 +23,8 @@
 
 ## 연결 전 확인
 
-- `.env`의 `AGENTSTREAM_URL`: 키만 제공되어 실제 호출 URL은 아직 확인되지 않음
-- AgentStream 요청/응답 계약: 현재 `message`, `conversation_id`, `history`와 Bearer 인증을 기본값으로 사용
+- `.env`의 `AGENTSTREAM_BASE_URL`, `AGENTSTREAM_CHATBOT_ID`, `AGENTSTREAM_API_KEY`로 AgentStream 공개 API를 설정
+- AgentStream 요청/응답 계약: health → 세션 생성 → 세션 messages 순서, `X-API-Key` 인증, NDJSON 스트리밍
 - 네이버 지도 Web Dynamic Map의 현재 접속 호스트 등록
 - 실제 회사 고객·접수 데이터와 브라우저 상담 기록의 서버 저장
 
