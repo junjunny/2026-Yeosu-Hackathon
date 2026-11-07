@@ -109,7 +109,9 @@ export async function replyToCounselor(item, rawText, onDelta = null) {
     if (!event || typeof event !== 'object') return;
     if (event.event_id && seen.has(event.event_id)) return;
     if (event.event_id) seen.add(event.event_id);
-    const type = String(event.type || event.event || '').toLowerCase();
+    // AgentStream currently uses `type: AIMessageChunk` with the semantic
+    // event in `event: assistant.delta`; prefer the latter when available.
+    const type = String(event.event || event.type || '').toLowerCase();
     const payload = event.data && typeof event.data === 'object' ? event.data : event;
     if (type === 'assistant.delta' || type.endsWith('.assistant.delta')) {
       const text = deltaText(payload.content ?? payload.delta ?? payload);
