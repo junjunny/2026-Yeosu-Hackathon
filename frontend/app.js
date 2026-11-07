@@ -26,7 +26,7 @@ let signatureHasInk = false;
 let sending = false;
 
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
-const DEMO_SEED_VERSION = 'farmingboy-customers-100-v6-balanced-field-progress';
+const DEMO_SEED_VERSION = `farmingboy-customers-100-v7-relative-seoul-date-${seoulDay(new Date())}`;
 const MANAGER_PASSWORD = '1234';
 const DEMO_CHOICES = {
   customerName: ['한준희'],
@@ -52,10 +52,11 @@ function demoCaseFromCustomer(customer, index, assignedEngineer = null, active =
   const text = customer.name === '고해숙'
     ? '충전기 출력 전압이 안 올라옵니다. 저도 장비를 잘 아는 편이라 부품을 먼저 보내주시고, 팀장님과 직접 통화하고 싶습니다.'
     : (job.request_text || '농기계 점검과 수리를 요청합니다.');
-  const todayIntake = String(receivedAt).startsWith('2026-11-07');
+  const demoToday = seoulDay(new Date());
+  const todayIntake = seoulDay(receivedAt) === demoToday;
   const repairMinutes = [45, 60, 75, 90, 120, 150][index % 6];
   const todaySlots = ['08:41:00','10:24:00','10:37:00','11:22:00','12:45:00','13:11:00','14:05:00'];
-  const completedAt = todayComplete ? `2026-11-07T${todaySlots[index % todaySlots.length]}+09:00` : (job.completed_at || new Date(Date.parse(receivedAt) + repairMinutes * 60000).toISOString());
+  const completedAt = todayComplete ? `${demoToday}T${todaySlots[index % todaySlots.length]}+09:00` : (job.completed_at || new Date(Date.parse(receivedAt) + repairMinutes * 60000).toISOString());
   const arrivedAt = new Date(Date.parse(completedAt) - repairMinutes * 60000).toISOString();
   const catalogPart = defaultCatalog[index % defaultCatalog.length];
   const travelFee = [33000, 55000, 77000, 100000][index % 4];
@@ -109,8 +110,23 @@ async function seedFarmingboyDemo() {
   const response = await fetch(DEMO_DATA_URL);
   if (!response.ok) throw new Error('100명 데모 데이터를 불러오지 못했습니다.');
   const payload = await response.json();
-  const customers = Array.isArray(payload.customers) ? payload.customers : [];
-  const today = seoulDay(new Date(`${payload._meta?.base_date || '2026-11-07'}T00:00:00+09:00`));
+  const today = seoulDay(new Date());
+  const sourceDate = payload._meta?.base_date || today;
+  const dayOffset = Date.parse(`${today}T00:00:00+09:00`) - Date.parse(`${sourceDate}T00:00:00+09:00`);
+  const shiftDemoTime = value => value && Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value) + dayOffset).toISOString() : value;
+  const todayIntakeSlots = ['08:41:00', '09:18:00', '10:24:00', '10:37:00', '11:30:00', '12:23:00'];
+  let todayIntakeIndex = 0;
+  const customers = (Array.isArray(payload.customers) ? payload.customers : []).map(customer => ({
+    ...customer,
+    current_job: customer.current_job ? {
+      ...customer.current_job,
+      received_at: String(customer.current_job.received_at || '').startsWith(sourceDate)
+        ? `${today}T${todayIntakeSlots[todayIntakeIndex++] || '12:50:00'}+09:00`
+        : shiftDemoTime(customer.current_job.received_at),
+      arrived_at: shiftDemoTime(customer.current_job.arrived_at),
+      completed_at: shiftDemoTime(customer.current_job.completed_at)
+    } : customer.current_job
+  }));
   const engineers = ['엔지니어 A', '엔지니어 B', '엔지니어 C'];
   const sorted = customers.filter(customer => seoulDay(customer.current_job?.received_at || '') !== today)
     .sort((a, b) => String(b.current_job?.received_at || '').localeCompare(String(a.current_job?.received_at || '')));
@@ -595,8 +611,9 @@ function priceImportView() {
 }
 function farmingboyManagerSummary() {
   const today=seoulDay(new Date());
+  const recent30Start=seoulDay(new Date(Date.now()-29*86400000));
   const todayCases=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today);
-  const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>='2026-10-09');
+  const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>=recent30Start);
   const dispatchCases=state.cases.filter(c=>c.scheduledToday);
   const completedToday=state.cases.filter(c=>c.stage==='complete'&&c.completedAt&&seoulDay(c.completedAt)===today);
   const scheduledToday=dispatchCases.filter(c=>c.stage!=='complete');
@@ -632,7 +649,8 @@ function managerView() {
   const {done,todo}=dashboardStats(state.cases);
   const queue=pendingCases().filter(c=>!c.assignedEngineer);
   const collecting=state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage));
-  const recent30=state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) >= '2026-10-09');
+  const recent30Start=seoulDay(new Date(Date.now()-29*86400000));
+  const recent30=state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) >= recent30Start);
   const dispatchCases=state.cases.filter(c => c.assignedEngineer && c.stage === 'awaiting-arrival');
   const dispatchTable=state.staff.engineers.map(engineer => { const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer); return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt || c.createdAt)} · 오늘 수리 아님</small></li>`).join('') || '<li>배정된 고객 없음</li>'}</ol></article>`; }).join('');
   return `<div class="manager-view manager-detail"><section class="manager-section-heading tomorrow-heading"><div><span>NEXT DAY ROUTE CONTROL</span><h2>내일의 배차 최적화</h2><p>오늘 접수·저장된 데모 고객을 후보로 본점 출발 거리와 예상 시간을 계산합니다.</p></div><div><strong>12</strong><span>내일 배차 후보</span></div><div><strong>${state.staff.engineers.length}</strong><span>통합 역량 기사</span></div></section><section class="manager-map"><iframe title="내일의 AS 배차 최적화 지도와 기사별 방문 순서" src="./dispatch/?embedded=1&amp;day=tomorrow" loading="eager"></iframe></section><details class="manager-history"><summary>오늘 기사별 이동 · 위치 근거 기록</summary><p>최종 서명과 현장 주소를 기준으로 한 진행 기록입니다. 실시간 GPS 추적 데이터는 아닙니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
