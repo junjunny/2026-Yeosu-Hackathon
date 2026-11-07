@@ -1,6 +1,6 @@
 # Fieldnote · 접수부터 현장 완료까지
 
-빌드 없는 HTML/CSS/JavaScript 데모입니다. 사용자 작업 범위는 `frontend/`이며 `AGENTS.md`, `HANDOFF.md`를 먼저 읽으세요. 실제 분석·저장·인증·지도 API는 연결 전입니다.
+상담 화면은 빌드 없는 HTML/CSS/JavaScript이며, 팀장 지도 배차는 Python FastAPI + OR-Tools 데모입니다. 사용자 작업 범위는 `frontend/`이며 `AGENTS.md`, `HANDOFF.md`를 먼저 읽으세요. 실제 분석·저장·인증·지도 API는 연결 전입니다.
 
 ## 실행 및 주최 측 8501 웹 주소
 
@@ -15,12 +15,13 @@ python3 -m http.server 4173 --directory frontend
 ```bash
 git fetch origin
 git switch codex/frontend-service-workflow
-python3 -m http.server 8501 --bind 0.0.0.0 --directory frontend
+python3 -m pip install -r frontend/dispatch/requirements.txt
+python3 -m uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 ```
 
 그 터미널의 프로세스를 유지한 채 https://devopen.jntp-ax.or.kr/i/nwa7YdKUBkelKaTn/ 에 접속합니다. 로컬 PC나 다른 서버에서 8501을 여는 것으로 해당 주최 측 URL에 연결되지는 않습니다. URL이 연결된 주최 측 컨테이너 안에서 실행해야 합니다. 다른 프로세스가 8501을 사용한다면 기존 실행 프로세스를 확인한 뒤 한 개의 서버만 실행하세요. 이번 작업 환경에서 해당 URL은 HTTP 502로 응답했으며 실제 주최 측 컨테이너에는 접속하지 않았습니다. 502의 원인은 이 응답만으로 확정할 수 없습니다.
 
-정적 서버는 현재 데모 UI를 제공하는 용도입니다. `/api/session`, 지도·저장 API를 제공하지 않으므로 실제 연동 시 팀 서버 또는 같은 출처의 프록시가 필요합니다. 위 Python 명령만으로 팀장 인증이 활성화되지는 않습니다.
+기존 `python -m http.server`는 상담 UI만 제공하는 용도입니다. 지도 배차는 위 FastAPI 명령으로 실행해야 합니다. `/api/session`, 지도·저장 API를 제공하지 않으므로 실제 연동 시 팀 서버 또는 같은 출처의 프록시가 필요합니다. 위 Python 명령만으로 팀장 인증이 활성화되지는 않습니다.
 
 ## 업무 흐름
 
@@ -36,17 +37,17 @@ python3 -m http.server 8501 --bind 0.0.0.0 --directory frontend
 
 현재 위치 표현은 **출동 주소에 근거한 사건 기록과 다음 목적지**입니다. 실제 GPS 좌표·주행 중 실시간 위치·지도 표시는 미연결입니다. 고객 수리 동의, 최종 서명/완료 시각을 각각 주소와 함께 기록하며 실제 GPS로 측정한 위치로 표시하지 않습니다.
 
-## 팀장 전용 접근
+## 최신 지도 배차 데모
 
-`manager-access.js`의 `accessConfig.sessionEndpoint`를 팀 서버의 세션 조회 API로 설정합니다. 응답 계약은 다음과 같습니다.
+최신 요청에 따라 로그인 없는 시연으로 바꿨습니다. 팀장 화면에서 **전문파트·일일 5건 기준 지도 배차 데모 열기**를 선택하거나 `/dispatch/`로 접속합니다. 자세한 실행 3줄과 API 단계는 [dispatch/README.md](dispatch/README.md)에 있습니다.
 
-```json
-{"authenticated": true, "role": "manager"}
-```
-
-팀장 선택과 관리자 변경 작업에 서버 세션을 확인하며 미연결·401/403·오류·다른 역할은 대시보드를 잠급니다. localStorage나 화면 역할 선택만으로 팀장 권한을 부여하지 않습니다. 새로고침 후에도 팀장 버튼에서 인증을 다시 확인합니다.
-
-현재 데이터는 브라우저 localStorage에 있어 이것은 프론트엔드 화면 접근 제어입니다. **실제 개인정보·대시보드 API 접근 통제는 서버에서 인증·권한 검증을 적용해야 완성됩니다.** 정적 파일에 비밀 PIN을 넣거나 역할 드롭다운을 인증으로 사용하지 않습니다. backend 파일은 변경하지 않았습니다.
+- 샘플 입력: `dispatch/data/as_requests.csv` 20건, `technicians.csv` 기사 4명. 고객 A·B·C가 섞인 합성 데이터입니다.
+- OR-Tools CVRP가 전문파트·하루 5건·긴급도 패널티로 배정합니다. 이전의 무작위 기사 배정보다 최신 전문파트 제약을 우선합니다.
+- 배차 계산에는 보정 Haversine 거리·시간만 사용하고, 확정 후 기사당 Directions 5를 한 번 호출합니다. 실패 시 대체 경로를 표시합니다.
+- 키는 `dispatch/.env`에 `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`으로 설정합니다. `.env.example`만 Git에 포함합니다. Client Secret은 HTTP로 제공하지 않습니다. Client ID는 네이버 JS 지도 로딩에 필요한 공개 식별자이므로 config 응답에 포함합니다.
+- 주소 캐시는 `dispatch/.private/geocoding.sqlite`이며 Git/HTTP 제공에서 제외합니다. 지도 키 없이도 합성 좌표도·대체 경로로 데모가 가능합니다.
+- 기존 상담 화면의 **고객 A·B·C 데모 불러오기**는 별도의 브라우저 합성 사례 12개를 만듭니다. 사용자 접수는 보존하고 같은 데모 ID만 교체합니다. 지도 배차 입력은 CSV이며 브라우저 상담 기록과 자동 동기화하지 않습니다.
+- `manager-access.js`의 demoMode 기본값은 true입니다. 실제 인증이 필요한 환경은 demoMode를 false로 하고 세션 API를 연결해야 합니다. 이번 요청 범위에는 로그인 구현이 없습니다.
 
 ## 부품과 견적
 
@@ -107,6 +108,6 @@ npm install --prefix /tmp/fieldnote-qa --no-audit --no-fund jsdom
 FIELDNOTE_QA_PACKAGE=/tmp/fieldnote-qa/package.json node frontend/tests/ui-smoke.mjs
 ```
 
-도메인 테스트 11개와 DOM 전체 흐름·엑셀 읽기/등록을 확인합니다. 실제 사진 처리·캔버스·반응형 화면은 실브라우저 확인이 필요합니다. 지도·인증·AI·서버 저장 API는 미연결입니다. tests의 xlsx는 합성 검증 파일이며 실제 가격은 사용자 제공 표를 기준으로 합니다.
+도메인 테스트 11개와 DOM 전체 흐름·엑셀 읽기/등록을 확인합니다. 실제 사진 처리·캔버스·반응형 화면은 실브라우저 확인이 필요합니다. 네이버 지도 어댑터와 FastAPI 배차가 추가되었으며 실제 키/도메인 권한 검증은 별도입니다. 인증·AI·서버 저장은 미연결입니다. tests의 xlsx는 합성 검증 파일이며 실제 가격은 사용자 제공 표를 기준으로 합니다.
 
 스킬은 `.agents/skills/`, 설치 기록은 `skills-lock.json`에 있습니다. 요청한 find-skills 설치·검색 후 기존 frontend-design 스킬을 적용해 기존 Fieldnote 화면 구성을 유지했습니다.

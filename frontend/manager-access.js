@@ -1,7 +1,7 @@
 // A server-validated session is required. Never authorize using localStorage or the role picker.
-export const accessConfig = { sessionEndpoint: '' };
+export const accessConfig = { sessionEndpoint: '', demoMode: true };
 export async function managerAccess() {
-  if (!accessConfig.sessionEndpoint) return false;
+  if (!accessConfig.sessionEndpoint) return accessConfig.demoMode; // Latest scope: no login for the synthetic hackathon demo.
   try {
     const response=await fetch(accessConfig.sessionEndpoint,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000)});
     if(!response.ok)return false;

@@ -51,3 +51,18 @@
 - manager-access.js의 sessionEndpoint에서 서버 확인된 manager 역할을 받아야 대시보드가 열립니다. 미연결이면 잠깁니다. 실제 데이터 보안은 서버 API에서 권한 검증이 필요합니다. 프론트엔드만으로 인증을 완성했다고 설명하지 마세요.
 - 주최 측 8501 URL과 실행 명령은 README에 추가했습니다. 이 환경에서는 URL이 502였으며 주최 측 컨테이너에 직접 배포하지 않았습니다.
 - 도메인 11개/DOM 흐름 테스트를 갱신했습니다. backend 파일은 변경하지 않았습니다.
+
+## 최신: FastAPI + OR-Tools 지도 데모 (이전 무작위 배정/인증 요구보다 우선)
+
+- 사용자 요청으로 로그인 없는 최소 데모로 변경. manager-access.demoMode=true이며 기존 팀장 화면에서 dispatch/로 연결합니다.
+- frontend/dispatch/에 FastAPI, OR-Tools CVRP, 네이버 Geocoding/Directions 5 어댑터, 단일 지도 HTML, 합성 CSV 20건·기사4명을 추가했습니다. backend/는 건드리지 않습니다.
+- 기사 전문파트·하루5건·긴급 패널티를 적용하고 더미 종료점으로 복귀를 생략합니다. 계산 중 외부 API 없이 Haversine×1.3/40km/h 행렬을 사용합니다. 확정 후 기사별 Directions 1회이며 재요청은 실행 결과를 재사용합니다.
+- 주소 SQLite 캐시, 주소 오류 리스트, 합성 ID에 한정한 좌표 대체, 도로 실패 시 직선 경로, SDK 실패 시 SVG 좌표도를 지원합니다. 실제 입력 주소는 실패 시 좌표를 지어내지 않습니다.
+- .env 키는 Git에 넣지 않습니다. HTTP 파일 허용 목록으로 Secret/CSV/Python/캐시를 제공하지 않습니다. JS 지도는 공개 Client ID만 config에서 받습니다.
+- 상담 화면의 데모 버튼은 고객 A/B/C 단계별 합성 사례12개를 보존된 사용자 기록 옆에 생성합니다. 지도 CSV와 브라우저 상담 기록은 별도 입력입니다.
+- AgentStream은 사용 서비스만 확인됐고 호출 URL/에이전트 ID/명세는 아직 없어 실제 RAG 연결은 보류입니다. API 키만으로 임의 서비스에 전송하지 않았습니다.
+- 실행은 dispatch/README.md의 pip install → .env → uvicorn 3줄을 사용합니다. 정적 http.server로 지도 API는 실행되지 않습니다.
+
+- FastAPI/배차 Python 테스트6개 및 키 없는 지도 HTML DOM 스모크 테스트 통과. 실제 제공된 키로 네이버 Geocoding 연결 성공을 확인했습니다. .env는 로컬에만 있으며 PR에 포함하지 않습니다.
+
+- 실제 Directions 5도 공개 주소 간 1회 호출로 성공했습니다 (도로 경로선·거리·밀리초→초 변환 확인). 브라우저 지도 SDK 렌더링과는 별도 검증입니다.
