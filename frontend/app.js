@@ -183,6 +183,11 @@ function bubble(role, text, createdAt, extra = '', authorName = '') {
 }
 function labelBadge(text, style = '') { return `<span class="badge ${style}">${escapeHtml(text)}</span>`; }
 function statusText(item) { return item?.status || '접수 준비'; }
+function demoIntakeTimestamp() {
+  const now = new Date();
+  const seoulTime = new Intl.DateTimeFormat('en-GB', { timeZone:'Asia/Seoul', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23' }).format(now);
+  return Number(seoulTime.slice(0, 2)) < 13 ? now.toISOString() : `${seoulDay(now)}T12:50:00+09:00`;
+}
 function demoChoices(name, values) {
   return `<div class="demo-choices" aria-label="시연 입력 보기"><span>시연 보기</span>${values.map(value => `<button type="button" data-demo-target="${escapeHtml(name)}" data-demo-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join('')}</div>`;
 }
@@ -471,8 +476,9 @@ $('#conversation').addEventListener('submit', async event => {
     if (!customerName || !registeredAddress || !String(data.get('dispatchAddress')||'').trim()) return formError(form,'고객 이름과 등록 주소를 확인해 주세요.','customerName');
     const knownCustomer=state.cases.find(c=>c.customerName===customerName && c.registeredAddress===registeredAddress);
     const created = createCase(knownCustomer?.customerId || `CUSTOMER-${Date.now().toString(36)}`, String(data.get('equipmentId')||'확인 필요'));
-    Object.assign(created,{customerName,registeredAddress,dispatchAddress:String(data.get('dispatchAddress')||'').trim(),counselorName:state.selectedCounselor,priority:'normal',beforePhotos:[],afterPhotos:[]});
-    created.transcript.push(entry('assistant', '고객이 설명한 내용을 가능한 한 원문 그대로 보내주세요. 사례를 확인해 상담에 필요한 기술적 답변을 드리겠습니다.'));
+    const receivedAt=demoIntakeTimestamp();
+    Object.assign(created,{createdAt:receivedAt,receivedAt,customerName,registeredAddress,dispatchAddress:String(data.get('dispatchAddress')||'').trim(),counselorName:state.selectedCounselor,priority:'normal',beforePhotos:[],afterPhotos:[]});
+    const welcome=entry('assistant', '고객이 설명한 내용을 가능한 한 원문 그대로 보내주세요. 사례를 확인해 상담에 필요한 기술적 답변을 드리겠습니다.');welcome.createdAt=receivedAt;created.transcript.push(welcome);
     state.cases.push(created); state.activeId = created.id; state.role = 'counselor';
     if (persist()) render(); return;
   }
