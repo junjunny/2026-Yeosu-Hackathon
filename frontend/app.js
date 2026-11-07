@@ -4,10 +4,9 @@ import { migrateState, customerChecklist, travelFee, parseParts, estimateTotal }
 import { planBatch, routeConfig } from './route-provider.js';
 import { readPriceWorkbook, catalogFromRows } from './price-import.js';
 
-import { dashboardStats, durationMinutes, closeReady } from './dashboard.js';
+import { dashboardStats, durationMinutes, closeReady, seoulDay } from './dashboard.js';
 
 import { technicianPerformance } from './performance.js';
-import { makeDemoCases } from './demo-cases.js';
 
 const state = migrateState(loadState());
 let performanceDays = 30;
@@ -22,6 +21,62 @@ const won = value => new Intl.NumberFormat('ko-KR', { style: 'currency', currenc
 const current = () => state.cases.find(item => item.id === state.activeId);
 let signatureHasInk = false;
 let sending = false;
+
+const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
+const DEMO_SEED_VERSION = 'farmingboy-customers-100-v1';
+
+function demoCaseFromCustomer(customer, index, assignedEngineer = null) {
+  const job = customer.current_job || {};
+  const receivedAt = job.received_at || new Date(Date.now() - index * 86400000).toISOString();
+  const active = Boolean(assignedEngineer);
+  const text = job.request_text || '농기계 점검과 수리를 요청합니다.';
+  const item = createCase(customer.customer_id, customer.machine?.model || '파밍보이2.0A');
+  Object.assign(item, {
+    id: `FARMINGBOY-${customer.customer_id}`,
+    customerName: customer.name,
+    phone: customer.phone,
+    registeredAddress: customer.address?.full || '',
+    dispatchAddress: customer.address?.full || '',
+    createdAt: receivedAt,
+    receivedAt,
+    customerRecord: customer,
+    counselorName: '상담사 A',
+    transcript: [{ role: 'counselor', text, authorName: '상담사 A', createdAt: receivedAt }],
+    flags: { visitRequested: true, cannotDrive: false, selfCareWanted: false },
+    analysis: { mode: 'demo', searchStatus: 'ok', history: [], similar: [], diagnosis: '팀장 배차용 합성 고객 기록', checklist: [], missingInfo: [], dispatch: { required: true, rule: '팀장 배차 대상', reason: '최근 30일 배차 시연 데이터' } },
+    dispatch: { required: true, rule: active ? '최근 30일 배차 대상' : '최근 30일 완료 기록', reason: active ? '오늘 접수와 분리된 배차 대상' : '완료된 고객 이력' },
+    erp: { productName: customer.machine?.model || '파밍보이2.0A', purchaseDate: customer.machine?.purchase_date || '확인 필요', repairHistory: customer.repair_history?.length ? `${customer.repair_history.length}건의 과거 수리 이력` : '없음', confirmedBy: '팀장 데모 데이터', confirmedAt: receivedAt },
+    assignedEngineer,
+    assignedAt: active ? receivedAt : null,
+    stage: active ? 'awaiting-arrival' : 'complete',
+    status: active ? '배차 대상 · 오늘 수리 아님' : '작업 완료',
+    completedAt: active ? null : (job.completed_at || receivedAt),
+    closedAt: active ? null : (job.completed_at || receivedAt),
+    repairNotes: active ? '' : '첨부된 최근 30일 완료 이력',
+    fieldLog: [],
+    positionEvents: []
+  });
+  return item;
+}
+
+async function seedFarmingboyDemo() {
+  if (state.demoSeedVersion === DEMO_SEED_VERSION) return;
+  const response = await fetch(DEMO_DATA_URL);
+  if (!response.ok) throw new Error('100명 데모 데이터를 불러오지 못했습니다.');
+  const payload = await response.json();
+  const customers = Array.isArray(payload.customers) ? payload.customers : [];
+  const today = seoulDay(new Date(`${payload._meta?.base_date || '2026-11-07'}T00:00:00+09:00`));
+  const engineers = ['엔지니어 A', '엔지니어 B', '엔지니어 C'];
+  const dispatchCustomers = customers.filter(customer => seoulDay(customer.current_job?.received_at || '') !== today)
+    .sort((a, b) => String(b.current_job?.received_at || '').localeCompare(String(a.current_job?.received_at || '')))
+    .slice(0, engineers.length * 4);
+  const assigned = new Map(dispatchCustomers.map((customer, index) => [customer.customer_id, engineers[Math.floor(index / 4)]]));
+  state.cases = customers.map((customer, index) => demoCaseFromCustomer(customer, index, assigned.get(customer.customer_id) || null));
+  state.staff = { counselors: ['상담사 A'], engineers };
+  state.selectedCounselor = '상담사 A'; state.selectedEngineer = engineers[0];
+  state.routePlans = {}; state.demoSeedVersion = DEMO_SEED_VERSION;
+  persist();
+}
 
 function persist() {
   try { saveState(state); return true; }
@@ -154,8 +209,10 @@ function render(scrollPosition = 'bottom') {
   $('#role-engineer').classList.toggle('active', state.role === 'engineer');
   $('#role-counselor').setAttribute('aria-pressed', String(state.role === 'counselor'));
   $('#role-engineer').setAttribute('aria-pressed', String(state.role === 'engineer'));
-  $('#case-list').innerHTML = state.cases.length ? [...state.cases].reverse().map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">${escapeHtml(c.status)}</span></button>`).join('') : '<p class="empty-cases">아직 접수된 상담이 없습니다.</p>';
-  $('#conversation').innerHTML = state.role==='manager' ? managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
+  const todayCases = state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) === seoulDay(new Date()));
+  $('#case-count').textContent = todayCases.length;
+  $('#case-list').innerHTML = todayCases.length ? [...todayCases].sort((a,b) => String(b.receivedAt || b.createdAt).localeCompare(String(a.receivedAt || a.createdAt))).map(c => `<button type="button" class="case-item ${c.id === state.activeId ? 'active' : ''}" data-case-id="${c.id}"><span class="case-item-top"><strong>${escapeHtml(c.customerName)}</strong><small>${date(c.receivedAt || c.createdAt)}</small></span><span class="case-item-symptom">${escapeHtml(c.transcript.find(m => m.role === 'counselor')?.text || '상담 대기')}</span><span class="case-item-status">오늘 접수 · ${escapeHtml(c.status)}</span></button>`).join('') : '<p class="empty-cases">오늘 접수된 상담이 없습니다.</p>';
+  $('#conversation').innerHTML = state.role==='manager' ? farmingboyManagerSummary()+managerView() : item ? (state.role === 'engineer' ? engineerView(item) : counselorView(item)) : startView();
   $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
   $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
   bindSignature();
@@ -200,7 +257,6 @@ async function imageData(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-$('#load-demo').addEventListener('click',async()=>{const button=$('#load-demo');button.disabled=true;try{const demos=await makeDemoCases();state.cases=[...state.cases.filter(c=>!c.id.startsWith('DEMO-SCENARIO-')),...demos];state.activeId=demos[0].id;state.role='counselor';state.closeFormOpen=false;if(persist())render('top');}finally{button.disabled=false;}});
 $('#new-case').addEventListener('click', () => { state.activeId = null; state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
@@ -360,10 +416,20 @@ function priceImportView() {
   if(!priceSheets.length) return '';
   return `<form id="catalog-map-form" class="stage-form"><h4>${escapeHtml(priceFileName)} · 열 확인</h4><label>시트<select id="price-sheet" name="sheet">${priceSheets.map((sheet,i)=>`<option value="${i}">${escapeHtml(sheet.name)}</option>`).join('')}</select></label><div id="price-mapping"></div><button class="primary-button" type="submit">가격표 확인 · 등록</button></form>`;
 }
+function farmingboyManagerSummary() {
+  const today=seoulDay(new Date());
+  const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>='2026-10-09');
+  const dispatchCases=state.cases.filter(c=>c.assignedEngineer&&c.stage==='awaiting-arrival');
+  const cards=state.staff.engineers.map(engineer=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt||c.createdAt)} · 오늘 수리 아님</small></li>`).join('')||'<li>배정된 고객 없음</li>'}</ol></article>`;}).join('');
+  return `<section class="demo-operations"><div class="manager-heading"><p>최근 30일 고객 ${recent30.length}명 · 오늘 접수는 오늘 수리로 자동 배정하지 않습니다.</p></div><div class="dashboard-stats"><article><span>오늘 접수</span><strong>${state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today).length}</strong></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong></article><article><span>오늘 배차 대상</span><strong>${dispatchCases.length}</strong><small>엔지니어 3명 × 4건</small></article></div><h3>오늘 배차 대상 · 12명</h3><div class="route-grid">${cards}</div></section>`;
+}
 function managerView() {
   const {done,todo}=dashboardStats(state.cases);
   const queue=pendingCases().filter(c=>!c.assignedEngineer);
   const collecting=state.cases.some(c=>['counseling','erp-pending','analyzing'].includes(c.stage));
+  const recent30=state.cases.filter(c => seoulDay(c.receivedAt || c.createdAt) >= '2026-10-09');
+  const dispatchCases=state.cases.filter(c => c.assignedEngineer && c.stage === 'awaiting-arrival');
+  const dispatchTable=state.staff.engineers.map(engineer => { const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer); return `<article class="route-card card"><h4>${escapeHtml(engineer)} <small>${rows.length}/4건</small></h4><ol>${rows.map(c=>`<li><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.dispatchAddress)}</span><small>접수 ${seoulDay(c.receivedAt || c.createdAt)} · 오늘 수리 아님</small></li>`).join('') || '<li>배정된 고객 없음</li>'}</ol></article>`; }).join('');
   return `<div class="manager-view"><h2>오늘의 현장 운영</h2><div class="manager-heading"><p>본점: 전남 나주시 왕곡면 혁신산단6길 9 · 모든 기사 본점 출발</p></div><h3>상담·현장 실적 <small>저장된 상담 기록 기준</small></h3><div class="dashboard-stats"><article><span>오늘의 해결된 건수</span><strong>${done.length}</strong></article><article><span>오늘의 해야 할 건수</span><strong>${todo.length}</strong><small>이월 미완료 포함</small></article></div><section class="manager-map"><iframe title="오늘의 AS 배차 지도와 기사별 방문 순서" src="./dispatch/?embedded=1" loading="eager"></iframe></section><details class="manager-history"><summary>기사별 이동 · 위치 기록</summary><p>주소 기반 방문 기록입니다. 실시간 GPS 위치와 지도는 연결 전입니다.</p>${state.staff.engineers.map(engineer=>engineerTimeline(engineer)).join('')}</details>${performanceView()}<h3>오늘 해결된 수리 · 시간과 비용</h3><div class="table-scroll"><table><thead><tr><th>고객 / 기사</th><th>완료 시점</th><th>수리 소요시간</th><th>청구액 (견적 기준)</th></tr></thead><tbody>${done.map(c=>`<tr><td>${escapeHtml(c.customerName)} / ${escapeHtml(c.assignedEngineer||'원격 안내')}</td><td>${date(c.completedAt||c.closedAt)}</td><td>${durationMinutes(c)==null?'기록 없음':durationMinutes(c)+'분'}</td><td>${c.repairPlan?won(quoteTotal(c.repairPlan)):'해당 없음'}</td></tr>`).join('')||'<tr><td colspan="4">오늘 완료된 수리가 없습니다.</td></tr>'}</tbody></table></div><details class="manager-settings"><summary>담당자·부품 가격표 관리</summary><form id="staff-form" class="stage-form"><label>상담사 이름 · 한 줄에 한 명<textarea name="counselors" rows="3" required>${escapeHtml(state.staff.counselors.join('\n'))}</textarea></label><label>기사 이름 · 한 줄에 한 명<textarea name="engineers" rows="3" required>${escapeHtml(state.staff.engineers.join('\n'))}</textarea></label><button class="primary-button" type="submit">담당자 저장</button></form><form id="catalog-file-form" class="stage-form"><label>파밍보이 부품 가격표 (.xlsx)<input name="priceFile" type="file" accept=".xlsx" required></label><p>현재 가격표: ${escapeHtml(state.catalogSource||'등록 전')} · ${state.catalog.length}개 부품</p><button class="primary-button" type="submit">엑셀 읽기</button></form>${priceImportView()}</details></div>`;
 }
 function performanceView() {
@@ -460,5 +526,15 @@ $('#conversation').addEventListener('submit',async event=>{
   }catch(error){formError(form,error.message);}
 });
 
-render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
-renderPriceMapping();
+async function bootstrap() {
+  try {
+    await seedFarmingboyDemo();
+    render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
+    renderPriceMapping();
+  } catch (error) {
+    render(state.role === 'engineer' || state.role === 'manager' ? 'top' : 'bottom');
+    const notice = document.createElement('p'); notice.className = 'form-error'; notice.textContent = error.message;
+    $('#conversation')?.prepend(notice);
+  }
+}
+bootstrap();
