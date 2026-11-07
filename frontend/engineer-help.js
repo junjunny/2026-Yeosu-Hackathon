@@ -1,10 +1,13 @@
-import { replyToCounselor } from './services.js';
+import { replyToCounselor } from './services.js?v=2';
 
 const form = document.querySelector('#help-form');
 const messages = document.querySelector('#messages');
 const status = document.querySelector('#help-status');
 const question = document.querySelector('#question');
-const conversation = { id: `ENGINEER-HELP-${crypto.randomUUID()}`, transcript: [] };
+const engineer = new URLSearchParams(location.search).get('engineer') || '엔지니어';
+document.querySelector('#help-title').textContent = `${engineer} 작업 도움말`;
+const conversation = { id: `ENGINEER-HELP-${engineer}-${crypto.randomUUID()}`, transcript: [] };
+const engineerEndpoint = new URL('../api/agentstream/engineer-chat', location.href).href;
 
 function bubble(kind, content) {
   const element = document.createElement('div');
@@ -26,7 +29,7 @@ form.addEventListener('submit', async event => {
   button.disabled = true;
   status.textContent = 'AgentStream 답변 생성 중';
   try {
-    const result = await replyToCounselor(conversation, raw, partial => { answer.textContent = partial; messages.scrollTop = messages.scrollHeight; }, '../api/agentstream/engineer-chat');
+    const result = await replyToCounselor(conversation, raw, partial => { answer.textContent = partial; messages.scrollTop = messages.scrollHeight; }, engineerEndpoint);
     answer.textContent = result;
     conversation.transcript.push({role:'counselor',text:raw},{role:'assistant',text:result});
     status.textContent = '답변 완료';
