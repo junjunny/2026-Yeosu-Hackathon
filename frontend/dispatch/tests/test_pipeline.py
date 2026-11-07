@@ -15,7 +15,7 @@ class DispatchTests(unittest.TestCase):
     def client(self):
         return TestClient(service.app)
 
-    def test_specialty_capacity_and_urgent_priority(self):
+    def test_integrated_capacity_and_urgent_priority(self):
         jobs = [
             {'id': str(i), 'coordinates': [126.7 + i * .001, 35.0], 'requiredPart': '전장',
              'priority': 'high' if i == 6 else 'low'}
@@ -27,8 +27,8 @@ class DispatchTests(unittest.TestCase):
         assigned = result['routes'][0]['jobs']
         self.assertEqual(len(assigned), 5)
         self.assertIn('6', [job['id'] for job in assigned])
-        self.assertNotIn('unsupported', [job['id'] for job in assigned])
-        self.assertTrue(any(job['id'] == 'unsupported' and '전문 파트' in job['reason'] for job in result['unassigned']))
+        self.assertIn('unsupported', [job['id'] for job in assigned])
+        self.assertTrue(all('전문 파트' not in job['reason'] for job in result['unassigned']))
         self.assertEqual(len(assigned) + len(result['unassigned']), len(jobs))
 
     def test_geocode_cache_and_secret_header(self):
@@ -69,16 +69,30 @@ class DispatchTests(unittest.TestCase):
 
     def test_pipeline_api_failure_uses_fallback_and_private_files_stay_private(self):
         client = self.client()
-        with patch.object(service.mapper, 'geocode', side_effect=RuntimeError('API failed')):
+        jobs = [
+            {
+                'id': f'DEMO-{index:03d}', 'date': '2026-11-01', 'address': f'합성 주소 {index}',
+                'model': '파밍보이2.0A', 'symptom': '합성 점검 요청', 'requiredPart': '통합',
+                'priority': 'high' if index == 1 else 'normal',
+            }
+            for index in range(1, 13)
+        ]
+        technicians = [
+            {'id': f'T{index}', 'name': f'엔지니어 {index}', 'specialties': []}
+            for index in range(1, 4)
+        ]
+        with patch.object(service, 'load_data', return_value=(jobs, technicians)), patch.object(
+            service.mapper, 'geocode', side_effect=RuntimeError('API failed')
+        ):
             data = client.post('/api/dispatch/geocode').json()
-        self.assertEqual(len(data['jobs']), 20)
+        self.assertEqual(len(data['jobs']), 12)
         ident = data['runId']
         planned = client.post('/api/dispatch/plan/' + ident).json()
         result = client.post('/api/dispatch/directions/' + ident).json()
         self.assertEqual(result['stage'], 'finished')
-        self.assertEqual(sum(len(route['jobs']) for route in result['routes']) + len(result['unassigned']), 20)
+        self.assertEqual(sum(len(route['jobs']) for route in result['routes']) + len(result['unassigned']), 12)
         self.assertTrue(all(len(route['jobs']) <= 5 for route in result['routes']))
-        self.assertTrue(any(job['id'] == 'DEMO-020' for job in result['unassigned']))
+        self.assertEqual(result['unassigned'], [])
         for route in result['routes']:
             if route['jobs']:
                 self.assertNotEqual(route['path'][0], route['path'][-1])
