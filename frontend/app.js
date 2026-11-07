@@ -180,7 +180,7 @@ function diagnosisCard(item) {
 function quoteTotal(plan) { return plan.legacy ? plan.parts.reduce((sum,p)=>sum+p.qty*p.unitPrice,0) + (plan.laborPrice||0) : estimateTotal(plan); }
 function quoteCard(item) {
   const p = item.repairPlan; if (!p) return '';
-  return `<div class="quote-card"><h4>${p.legacy ? '이전 버전 견적 · 출장비 확인 필요' : '최종 견적서'}</h4><p>${escapeHtml(p.details)}</p><div class="quote-row"><strong>부품비 (소비자가 + 공임)</strong><strong>금액</strong></div>${p.parts.map(part=>`<div class="quote-row"><span>${escapeHtml(part.name)} × ${part.qty}</span><span>${won(part.qty*part.unitPrice)}</span></div>`).join('')}${p.legacy?`<div class="quote-row"><span>이전 작업비</span><span>${won(p.laborPrice)}</span></div>`:`<div class="quote-row"><span>출장비</span><span>${won(p.travelFee)}</span></div>`}<div class="quote-row quote-total"><strong>청구 총액</strong><strong>${won(quoteTotal(p))}</strong></div><small>가격표: ${escapeHtml(p.catalogSource || '이전 합성 견적')} · ${p.quotedAt ? date(p.quotedAt) : ''}</small></div>`;
+  return `<div class="quote-card"><h4>${p.legacy ? '이전 버전 견적 · 출장비 확인 필요' : '최종 견적서'}</h4><p>${escapeHtml(p.details)}</p>${!p.legacy&&Number.isFinite(Number(p.distanceKm))?`<p class="quote-route">본사 → 현장 ${Number(p.distanceKm).toFixed(1)}km · ${escapeHtml(p.travelSource||'자동 거리 계산')}</p>`:''}<div class="quote-row"><strong>부품비 (소비자가 + 공임)</strong><strong>금액</strong></div>${p.parts.map(part=>`<div class="quote-row"><span>${escapeHtml(part.name)} × ${part.qty}</span><span>${won(part.qty*part.unitPrice)}</span></div>`).join('')}${p.legacy?`<div class="quote-row"><span>이전 작업비</span><span>${won(p.laborPrice)}</span></div>`:`<div class="quote-row"><span>자동 출장비</span><span>${won(p.travelFee)}</span></div>`}<div class="quote-row quote-total"><strong>청구 총액</strong><strong>${won(quoteTotal(p))}</strong></div><small>가격표: ${escapeHtml(p.catalogSource || '이전 합성 견적')} · ${p.quotedAt ? date(p.quotedAt) : ''}</small></div>`;
 }
 
 function signatureReceipt(signature, title) {
@@ -195,6 +195,10 @@ function signatureForm(kind, question, checkboxText) {
   return `<form id="${kind}-form" class="stage-form"><p>${question}</p>${kind === 'verification' ? privacyNotice() : ''}<label class="consent-row"><input name="consent" type="checkbox" required><span>${checkboxText}</span></label><label>고객 서명<canvas tabindex="0" class="signature-pad" width="550" height="150" aria-label="고객 서명 영역"></canvas></label><button type="button" class="signature-clear ghost-button">서명 다시 쓰기</button><label>직접 서명할 수 없는 경우 성명 입력<input name="typedName" maxlength="80" autocomplete="off" placeholder="고객 성명 입력…"></label><small>그림 서명 또는 성명 입력 중 하나가 필요합니다. 이 시연에서는 합성 이름만 사용하세요.</small><button class="primary-button" type="submit">${kind === 'approval' ? '고객 수리 동의 저장' : '수리 이행 확인 서명 저장'}</button></form>`;
 }
 
+function photoPicker(name) {
+  return `<div class="multi-photo-picker">${Array.from({length:5},(_,index)=>`<label><span>사진 ${index+1}${index===0?' · 필수':''}</span><input name="${name}" type="file" accept="image/*" ${index===0?'required':''}></label>`).join('')}</div>`;
+}
+
 function stageForm(item) {
   switch (item.stage) {
     case 'awaiting-arrival':
@@ -202,21 +206,67 @@ function stageForm(item) {
     case 'checklist':
       return `<form id="checklist-form" class="stage-form"><div class="checklist">${item.analysis.checklist.map((step, i) => `<label class="check-row"><input type="checkbox" name="step" value="${i}"><span>${escapeHtml(step)}</span></label>`).join('')}</div><label>고객과 확인한 점검 결과<textarea name="findings" rows="3" required maxlength="2000" placeholder="브레이크·타이어 상태와 고객 증상 확인 결과"></textarea></label><button class="primary-button" type="submit">체크 결과 보내기</button></form>`;
     case 'before-photos':
-      return `<form id="before-photos-form" class="stage-form"><label>현장 확인 · 수리 전 사진 (여러 장)<input name="beforePhotos" type="file" accept="image/*" multiple required></label><small>점검 결과와 수리 전 상태를 첨부한 뒤 견적을 작성합니다.</small><button class="primary-button" type="submit">수리 전 사진 저장</button></form>`;
+      return `<form id="before-photos-form" class="stage-form"><h4>현장 확인 · 수리 전 사진</h4>${photoPicker('beforePhotos')}<small>사진 1은 필수이며 필요한 만큼 최대 5장까지 추가해 주세요.</small><button class="primary-button" type="submit">수리 전 사진 저장</button></form>`;
     case 'repair-plan':
-      return `<form id="plan-form" class="stage-form"><label>수리 예정 내용<textarea name="details" rows="3" maxlength="2000" required></textarea></label><label>부품과 수량<textarea name="partsChat" rows="4" required placeholder="가격표의 정확한 부품명 × 2&#10;다른 부품명 × 1"></textarea></label><details><summary>사용 가능한 부품 · ${state.catalog.length}개</summary>${state.catalog.length?`<ul>${state.catalog.map(p=>`<li>${escapeHtml(p.name)} (${escapeHtml(p.id)}) · ${won(p.retailPrice+p.laborPrice)}</li>`).join('')}</ul>`:'<p>팀장 화면에서 부품 가격표 엑셀을 등록해 주세요. 확인되지 않은 가격으로는 견적을 만들지 않습니다.</p>'}</details><label>출장 지역<select name="region" required><option value="">선택해 주세요</option><option value="naju">나주 관내 · 33,000원</option><option value="jeonnam">전남 내 나주 외 · 거리별 적용</option><option value="outside">전남 외 · 100,000원</option></select></label><label>출장 거리 (km)<input name="distanceKm" type="number" min="0" step="0.1" inputmode="decimal"><small>나주 외 전남 지역은 필수입니다. 60km 미만 55,000원 / 60~100km 미만 77,000원 / 100km 이상 100,000원</small></label><p id="quote-preview" role="status">부품비는 소비자가와 공임을 합산합니다.</p><button class="primary-button" type="submit">자동 계산 · 견적 확인</button></form>`;
+      return `<form id="plan-form" class="stage-form"><label>수리 예정 내용<textarea name="details" rows="3" maxlength="2000" required></textarea></label><div class="part-picker"><label for="part-search">부품 검색<input id="part-search" type="search" autocomplete="off" placeholder="예: 브레이크, 타이어, 충전기"></label><small>부품명의 일부만 입력한 뒤 목록에서 선택하세요.</small><div id="part-suggestions" class="part-suggestions" role="listbox" aria-label="검색된 부품"></div><div id="selected-parts" class="selected-parts" aria-live="polite"></div><input type="hidden" name="partsChat"></div><section class="travel-estimate" aria-live="polite"><div><span>자동 출장비</span><strong id="travel-fee-value">계산 중…</strong></div><p id="travel-estimate-status">본사와 실제 출동 주소의 도로 거리를 확인하고 있습니다.</p><input type="hidden" name="region"><input type="hidden" name="distanceKm"><input type="hidden" name="travelFee"></section><p id="quote-preview" role="status">부품을 선택하면 자동 출장비를 더해 최종 견적을 계산합니다.</p><button id="plan-submit" class="primary-button" type="submit" disabled>최종 견적 확인</button></form>`;
     case 'customer-approval':
       return quoteCard(item) + signatureForm('approval', '고객에게 부품·가격·총액을 설명한 후 수리 진행 동의를 받아 주세요.', '표시된 수리 내용과 예상 금액에 동의합니다.');
     case 'repair-notes':
       return `<form id="repair-notes-form" class="stage-form"><label>실제 수리 내용과 결과<textarea name="repairNotes" rows="5" maxlength="3000" required placeholder="교체한 부품, 실제 조치, 재시험 결과를 적어 주세요…"></textarea></label><button class="primary-button" type="submit">수리 내역 보내기</button></form>`;
     case 'photos':
-      return `<form id="photos-form" class="stage-form"><label>수리 후 사진 (여러 장)<input name="afterPhotos" type="file" accept="image/*" multiple required></label><button class="primary-button" type="submit">수리 후 사진 저장</button></form>`;
+      return `<form id="photos-form" class="stage-form"><h4>수리 후 사진</h4>${photoPicker('afterPhotos')}<small>사진 1은 필수이며 수리 완료 상태를 최대 5장까지 추가해 주세요.</small><button class="primary-button" type="submit">수리 후 사진 저장</button></form>`;
     case 'final-verification':
       return `${photoGallery(item)}${signatureForm('verification', '고객에게 개인정보 처리 내역을 안내하고 요청한 수리 이행 여부를 확인해 주세요.', '요청하신 수리를 잘 이행하였음을 확인했습니다.')}`;
     case 'complete':
       return `<div class="completion-card card"><div class="card-title"><span class="step-index done">✓</span><div><h3>현장 완료 보고</h3><p>${date(item.completedAt)} · 수리 동의 및 수리 이행 확인 서명 저장</p></div></div>${quoteCard(item)}<p><b>실제 수리</b> ${escapeHtml(item.repairNotes)}</p>${photoGallery(item)}<div class="signature-receipts">${signatureReceipt(item.approvalSignature, '수리 진행 동의')}${signatureReceipt(item.finalSignature, '수리 이행 확인')}</div></div>`;
     default: return '<div class="waiting-box">이 상담은 출동 없이 원격 안내로 종료되었습니다.</div>';
   }
+}
+
+function renderPartSuggestions(query) {
+  const target=$('#part-suggestions');if(!target)return;
+  const keyword=String(query||'').trim().toLowerCase();
+  if(!keyword){target.innerHTML='';return;}
+  const matches=state.catalog.filter(part=>`${part.name} ${part.id}`.toLowerCase().includes(keyword)).slice(0,10);
+  target.innerHTML=matches.length?matches.map(part=>`<button type="button" role="option" data-select-part="${escapeHtml(part.id)}"><span><strong>${escapeHtml(part.name)}</strong><small>${escapeHtml(part.id)}</small></span><b>${won(part.retailPrice+part.laborPrice)}</b></button>`).join(''):'<p>일치하는 부품이 없습니다. 다른 단어로 검색해 주세요.</p>';
+}
+
+function addPartSelection(partId) {
+  const part=state.catalog.find(item=>item.id===partId);const target=$('#selected-parts');if(!part||!target)return;
+  if(target.querySelector(`[data-selected-part="${CSS.escape(part.id)}"]`)){target.querySelector(`[data-selected-part="${CSS.escape(part.id)}"] input`)?.focus();return;}
+  target.insertAdjacentHTML('beforeend',`<div class="selected-part-row" data-selected-part="${escapeHtml(part.id)}"><div><strong>${escapeHtml(part.name)}</strong><small>단가 ${won(part.retailPrice+part.laborPrice)}</small></div><label>수량<input type="number" data-part-qty min="1" max="99" step="1" value="1" inputmode="numeric"></label><button type="button" data-remove-part="${escapeHtml(part.id)}" aria-label="${escapeHtml(part.name)} 삭제">×</button></div>`);
+  const search=$('#part-search');if(search)search.value='';renderPartSuggestions('');syncSelectedParts();
+}
+
+function syncSelectedParts() {
+  const form=$('#plan-form');if(!form)return;
+  const rows=[...form.querySelectorAll('[data-selected-part]')];
+  form.elements.partsChat.value=rows.map(row=>{const part=state.catalog.find(item=>item.id===row.dataset.selectedPart);const qty=Math.max(1,Math.min(99,Number(row.querySelector('[data-part-qty]').value)||1));row.querySelector('[data-part-qty]').value=qty;return part?`${part.name} × ${qty}`:'';}).filter(Boolean).join('\n');
+  updateQuotePreview(form);
+}
+
+function updateQuotePreview(form=$('#plan-form')) {
+  if(!form)return;
+  const preview=form.querySelector('#quote-preview');const submit=form.querySelector('#plan-submit');const data=new FormData(form);const fee=Number(data.get('travelFee'));
+  if(!Number.isSafeInteger(fee)||fee<0){if(preview)preview.textContent='출장 거리와 출장비 계산을 기다리고 있습니다.';if(submit)submit.disabled=true;return;}
+  try {const parts=parseParts(String(data.get('partsChat')),state.catalog);const partTotal=parts.reduce((sum,part)=>sum+part.qty*part.unitPrice,0);if(preview)preview.innerHTML=`부품비 <strong>${won(partTotal)}</strong> + 자동 출장비 <strong>${won(fee)}</strong> = 최종 견적 <strong>${won(estimateTotal({parts,travelFee:fee}))}</strong>`;if(submit)submit.disabled=false;}
+  catch(error){if(preview)preview.textContent=error.message;if(submit)submit.disabled=true;}
+}
+
+function applyTravelEstimate(item, estimate) {
+  const form=$('#plan-form');if(!form||current()?.id!==item.id)return;
+  form.elements.region.value=estimate.region;form.elements.distanceKm.value=estimate.distanceKm;form.elements.travelFee.value=estimate.travelFee;
+  $('#travel-fee-value').textContent=won(estimate.travelFee);
+  $('#travel-estimate-status').textContent=`본사 ↔ 현장 ${estimate.distanceKm}km · 약 ${estimate.durationMinutes}분 · ${estimate.source}`;
+  updateQuotePreview(form);
+}
+
+async function loadTravelEstimate(item, force=false) {
+  if(!item||item.stage!=='repair-plan')return;
+  if(!force&&item.travelEstimate?.dispatchAddress===item.dispatchAddress){applyTravelEstimate(item,item.travelEstimate);return;}
+  const status=$('#travel-estimate-status');const submit=$('#plan-submit');if(status)status.textContent='본사와 실제 출동 주소의 도로 거리를 확인하고 있습니다.';if(submit)submit.disabled=true;
+  try {const response=await fetch('./api/dispatch/travel-estimate',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:item.dispatchAddress})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.detail||'출장 거리를 계산하지 못했습니다.');item.travelEstimate={...result,dispatchAddress:item.dispatchAddress,calculatedAt:new Date().toISOString()};persist();applyTravelEstimate(item,item.travelEstimate);}
+  catch(error){if(status)status.innerHTML=`${escapeHtml(error.message)} <button type="button" class="ghost-button travel-retry">다시 계산</button>`;}
 }
 
 function engineerView(item) {
@@ -257,6 +307,7 @@ function render(scrollPosition = 'bottom') {
   $('.content-grid').classList.toggle('manager-layout',state.role==='manager');
   $('#details').innerHTML = state.role==='manager' ? '' : renderDetails();
   bindSignature();
+  if(state.role==='engineer'&&item?.stage==='repair-plan')loadTravelEstimate(item);
   $('#conversation').scrollTop = scrollPosition === 'top' ? 0 : $('#conversation').scrollHeight;
 }
 
@@ -303,6 +354,9 @@ $('#role-counselor').addEventListener('click', () => { state.role = 'counselor';
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
+  const partButton=event.target.closest('[data-select-part]');if(partButton){addPartSelection(partButton.dataset.selectPart);return;}
+  const removePart=event.target.closest('[data-remove-part]');if(removePart){removePart.closest('[data-selected-part]')?.remove();syncSelectedParts();return;}
+  if(event.target.closest('.travel-retry')){loadTravelEstimate(current(),true);return;}
   const priorityButton=event.target.closest('[data-confirm-priority]');
   if(priorityButton){const item=state.cases.find(c=>c.id===priorityButton.dataset.confirmPriority);const select=document.querySelector(`[data-priority-case="${CSS.escape(item?.id||'')}"]`);if(item&&select){item.priority=select.value;item.priorityConfirmed=true;persist();render('top');}return;}
   const approveButton=event.target.closest('[data-manager-approve]');
@@ -311,16 +365,14 @@ $('#conversation').addEventListener('click', event => {
     if(!item||state.role!=='manager'||item.stage!=='awaiting-arrival'||!item.dispatch?.required)return;
     if(!item.priorityConfirmed){window.alert('우선순위를 먼저 확정해 주세요.');return;}
     const engineerA=state.staff.engineers.find(name=>name==='엔지니어 A')||state.staff.engineers.find(name=>/A$/i.test(name))||state.staff.engineers[0];
-    if(!engineerA){window.alert('배정할 엔지니어 A를 확인해 주세요.');return;}
+    if(!engineerA){window.alert('현장 담당자를 확인해 주세요.');return;}
     const activeCount=state.cases.filter(c=>c.id!==item.id&&c.assignedEngineer===engineerA&&!['complete','remote-closed'].includes(c.stage)).length;
-    if(activeCount>=5){window.alert(`${engineerA}의 진행 중 배정이 5건입니다. 완료 처리 후 다시 컨펌해 주세요.`);return;}
-    item.managerApprovedAt=new Date().toISOString();item.managerApprovedBy='팀장';item.assignedEngineer=engineerA;item.assignedAt=item.managerApprovedAt;item.assignmentSource='manager-demo-confirm';item.status=`팀장 최종 승인 · ${engineerA} 배정`;state.selectedEngineer=engineerA;
-    item.fieldLog.push(entry('assistant',`팀장 최종 컨펌이 완료되어 ${engineerA}에게 배정되었습니다.`));
+    if(activeCount>=5){window.alert('현장 담당자의 진행 중 업무가 5건입니다. 완료 처리 후 다시 컨펌해 주세요.');return;}
+    item.managerApprovedAt=new Date().toISOString();item.managerApprovedBy='팀장';item.assignedEngineer=engineerA;item.assignedAt=item.managerApprovedAt;item.assignmentSource='manager-demo-confirm';item.status='팀장 최종 컨펌 · 현장 전달 완료';state.selectedEngineer=engineerA;
+    item.fieldLog.push(entry('assistant','팀장 최종 컨펌이 완료되어 현장 단계로 전달되었습니다.'));
     item.fieldLog.push(entry('assistant','엔지니어 담당 챗봇 API 연결 전에는 저장된 상담·진단 기록을 바탕으로 현장 절차를 진행합니다.'));
     persist();render('top');return;
   }
-  const engineerButton=event.target.closest('[data-open-engineer]');
-  if(engineerButton){const item=state.cases.find(c=>c.id===engineerButton.dataset.openEngineer);if(item?.assignedEngineer){state.activeId=item.id;state.selectedEngineer=item.assignedEngineer;state.role='engineer';persist();render('top');}return;}
   const evidence=event.target.closest('[data-evidence-id]');if(evidence){state.activeId=evidence.dataset.evidenceId;state.role='engineer';const c=current();if(c?.assignedEngineer)state.selectedEngineer=c.assignedEngineer;persist();render('top');return;}
   if (event.target.id === 'open-close') { state.closeFormOpen = true; render(); }
   if (event.target.id === 'cancel-close') { state.closeFormOpen = false; render(); }
@@ -414,8 +466,8 @@ $('#conversation').addEventListener('submit', async event => {
   if (form.id === 'plan-form' && item.stage === 'repair-plan') {
     try {
       const parts=parseParts(String(data.get('partsChat')),state.catalog);
-      const fee=travelFee({region:data.get('region'),distanceKm:data.get('distanceKm')});
-      item.repairPlan={details:String(data.get('details')).trim(),parts,travelFee:fee,region:data.get('region'),distanceKm:data.get('distanceKm'),catalogSource:state.catalogSource,quotedAt:new Date().toISOString()};
+      const automaticFee=Number(data.get('travelFee'));const fee=Number.isSafeInteger(automaticFee)&&automaticFee>=0?automaticFee:travelFee({region:data.get('region'),distanceKm:data.get('distanceKm')});
+      item.repairPlan={details:String(data.get('details')).trim(),parts,travelFee:fee,region:data.get('region'),distanceKm:Number(data.get('distanceKm')),travelSource:item.travelEstimate?.source||'자동 거리 계산',hqAddress:item.travelEstimate?.hqAddress||'본사',dispatchAddress:item.dispatchAddress,catalogSource:state.catalogSource,quotedAt:new Date().toISOString()};
     } catch(error) { return formError(form,error.message,'partsChat'); }
     advance(item, `수리 계획과 예상 총액 ${won(quoteTotal(item.repairPlan))} 입력`, 'customer-approval', '고객에게 수리 내용과 총액을 설명한 뒤 진행 동의 서명을 받아 주세요.', '고객 동의 대기'); return;
   }
@@ -435,7 +487,7 @@ $('#conversation').addEventListener('submit', async event => {
     const before=form.id==='before-photos-form'; const button=form.querySelector('button[type="submit"]'); button.disabled=true;button.textContent='사진 처리 중…';
     try {
       const files=data.getAll(before?'beforePhotos':'afterPhotos').filter(file=>file.size);
-      if (!files.length || files.length>12) throw new Error('사진은 1~12장씩 첨부해 주세요.');
+      if (!files.length || files.length>5) throw new Error('사진은 수리 전·후 각각 1~5장씩 첨부해 주세요.');
       const photos=[]; for(const file of files) photos.push(await imageData(file));
       const key=before?'beforePhotos':'afterPhotos'; const previous=item[key]; const oldStage=item.stage; const oldStatus=item.status; const logLength=item.fieldLog.length;
       item[key]=photos;
@@ -480,7 +532,7 @@ function farmingboyManagerSummary() {
   const todayCases=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)===today);
   const recent30=state.cases.filter(c=>seoulDay(c.receivedAt||c.createdAt)>='2026-10-09');
   const dispatchCases=state.cases.filter(c=>c.scheduledToday);
-  const completedToday=dispatchCases.filter(c=>c.stage==='complete');
+  const completedToday=state.cases.filter(c=>c.stage==='complete'&&c.completedAt&&seoulDay(c.completedAt)===today);
   const scheduledToday=dispatchCases.filter(c=>c.stage!=='complete');
   const confirmedToday=todayCases.filter(c=>c.priorityConfirmed);
   const approvedToday=todayCases.filter(c=>c.managerApprovedAt&&c.assignedEngineer);
@@ -488,9 +540,9 @@ function farmingboyManagerSummary() {
   const managerQueue=state.cases.filter(c=>c.stage==='awaiting-arrival'&&!c.assignedEngineer);
   const engineerLanes=state.staff.engineers.map((engineer,index)=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);const complete=rows.filter(c=>c.stage==='complete').length;return `<section class="topology-lane"><div class="topology-engineer"><span class="node-icon" aria-hidden="true">${String.fromCharCode(65+index)}</span><div><strong>${escapeHtml(engineer)}</strong><small>${complete} 완료 · ${rows.length-complete} 예정</small></div></div><div class="topology-stops">${rows.map((c,stopIndex)=>`<div class="topology-stop ${c.stage==='complete'?'is-complete':'is-scheduled'}"><span>${stopIndex+1}</span><div><strong>${escapeHtml(c.customerName)}</strong><small>${c.stage==='complete'?'수리 완료':'방문 예정'}</small></div></div>`).join('')||'<div class="topology-empty">배정 없음</div>'}</div></section>`;}).join('');
   const workload=state.staff.engineers.map((engineer,index)=>{const rows=dispatchCases.filter(c=>c.assignedEngineer===engineer);const complete=rows.filter(c=>c.stage==='complete').length;const percent=rows.length?Math.round(complete/rows.length*100):0;return `<div class="workload-row"><div><span class="engineer-dot dot-${index+1}"></span><strong>${escapeHtml(engineer)}</strong><small>${complete}/${rows.length}건 완료</small></div><div class="workload-track"><span style="width:${percent}%"></span></div><b>${percent}%</b></div>`;}).join('');
-  const todaySummary=todayCases.map(c=>{const approved=Boolean(c.managerApprovedAt&&c.assignedEngineer);const canApprove=Boolean(c.dispatch?.required&&c.stage==='awaiting-arrival'&&c.priorityConfirmed&&!approved);return `<article class="manager-intake ${approved?'is-approved':''}"><div class="intake-priority priority-${escapeHtml(c.priority||'normal')}">${priorityLabel(c.priority)}</div><div class="intake-copy"><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.transcript.find(m=>m.role==='counselor')?.text||'상담 요약 없음')}</span><small>${escapeHtml(c.dispatchAddress)}${approved?` · ${escapeHtml(c.assignedEngineer)} 배정 완료`:''}</small></div><label>우선순위<select data-priority-case="${escapeHtml(c.id)}" ${approved?'disabled':''}><option value="high" ${c.priority==='high'?'selected':''}>상</option><option value="normal" ${c.priority==='normal'?'selected':''}>중</option><option value="low" ${c.priority==='low'?'selected':''}>하</option></select></label><div class="manager-intake-actions">${approved?`<span class="assignment-chip">최종 컨펌 완료</span><button type="button" class="primary-button" data-open-engineer="${escapeHtml(c.id)}">엔지니어 A 화면</button>`:`<button type="button" class="ghost-button" data-confirm-priority="${escapeHtml(c.id)}">${c.priorityConfirmed?'우선순위 확정됨':'우선순위 확정'}</button><button type="button" class="primary-button" data-manager-approve="${escapeHtml(c.id)}" ${canApprove?'':'disabled'}>최종 컨펌 · A 배정</button>`}</div></article>`;}).join('');
-  const events=[...todayCases.map(c=>({at:c.managerApprovedAt||c.receivedAt||c.createdAt,type:c.managerApprovedAt?'배정':'접수',name:c.customerName,detail:c.managerApprovedAt?`${c.assignedEngineer} · 팀장 최종 컨펌 완료`:`우선순위 ${priorityLabel(c.priority)} · ${c.priorityConfirmed?'우선순위 확정':'확인 대기'}`,tone:c.managerApprovedAt?'success':c.priority==='high'?'alert':'info'})),...dispatchCases.map(c=>({at:c.completedAt||c.assignedAt||c.receivedAt||c.createdAt,type:c.stage==='complete'?'완료':'방문',name:c.customerName,detail:`${c.assignedEngineer||'배차 대기'} · ${c.stage==='complete'?'현장 수리 완료':'오늘 방문 예정'}`,tone:c.stage==='complete'?'success':'scheduled'}))].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,10);
-  return `<section class="demo-operations ops-dashboard" aria-label="농기계 AS 통합 관제 대시보드"><header class="ops-dashboard-header"><div><span class="ops-eyebrow">FIELD SERVICE CONTROL</span><h2>농기계 AS 통합 관제</h2><p>접수 검토부터 기사 배차, 현장 완료까지 한 화면에서 확인합니다.</p></div><div class="ops-live"><span></span><strong>운영 중</strong><small>${today} · 본점 기준</small></div></header><div class="dashboard-stats ops-kpis"><article><span>오늘 접수</span><strong>${todayCases.length}</strong><small>최종 컨펌 ${approvedToday.length}건</small></article><article><span>오늘 수리 예약</span><strong>${dispatchCases.length}</strong><small>접수일과 방문일 분리</small></article><article><span>현장 완료</span><strong>${completedToday.length}</strong><small>예정 ${scheduledToday.length}건</small></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong><small>우선 확인 ${highPriority}건</small></article></div><div class="ops-board"><aside class="ops-panel intake-monitor"><div class="panel-title"><div><span>INTAKE</span><h3>접수 검토 현황</h3></div><b>${confirmedToday.length}/${todayCases.length}</b></div><div class="donut-wrap"><div class="status-donut" style="--progress:${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}"><strong>${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}%</strong><small>우선순위 확정</small></div></div><dl class="monitor-list"><div><dt>우선순위 상</dt><dd class="text-alert">${highPriority}건</dd></div><div><dt>최종 컨펌</dt><dd>${approvedToday.length}건</dd></div><div><dt>배차 대기</dt><dd>${managerQueue.length}건</dd></div></dl><p class="ops-rule">오늘 접수는 오늘 수리 예약과 분리합니다. 시연 접수는 팀장 최종 컨펌 후 엔지니어 A에게 직접 배정할 수 있습니다.</p></aside><section class="ops-panel topology-panel"><div class="panel-title"><div><span>WORKFLOW TOPOLOGY</span><h3>접수 → 검토 → 배차 → 현장 완료</h3></div><small>실시간 데모 데이터</small></div><div class="topology-flow"><div class="topology-source"><div class="flow-node source-node"><span aria-hidden="true">☎</span><strong>오늘 접수</strong><small>${todayCases.length}건</small></div><i aria-hidden="true"></i><div class="flow-node manager-node"><span aria-hidden="true">✓</span><strong>팀장 검토</strong><small>${approvedToday.length}건 최종 컨펌</small></div><i aria-hidden="true"></i><div class="flow-node hub-node"><span aria-hidden="true">⌘</span><strong>통합 배차</strong><small>거리·시간 최적화</small></div></div><div class="topology-branches">${engineerLanes}</div></div><div class="topology-legend"><span><i class="legend-complete"></i>완료 ${completedToday.length}</span><span><i class="legend-scheduled"></i>예정 ${scheduledToday.length}</span><span><i class="legend-review"></i>접수 검토 ${todayCases.length}</span></div></section><aside class="ops-panel workload-panel"><div class="panel-title"><div><span>ENGINEERS</span><h3>기사별 처리 현황</h3></div><b>${completedToday.length}/${dispatchCases.length}</b></div><div class="workload-list">${workload}</div><div class="completion-summary"><span>오늘 완료율</span><strong>${dispatchCases.length?Math.round(completedToday.length/dispatchCases.length*100):0}%</strong><small>기사당 최대 5건 · 동일 통합 역량</small></div></aside></div><section class="ops-panel event-panel"><div class="panel-title"><div><span>LIVE EVENTS</span><h3>오늘 운영 이벤트</h3></div><small>최근 ${events.length}건</small></div><div class="event-table"><div class="event-table-head"><span>시간</span><span>구분</span><span>고객</span><span>처리 상태</span></div>${events.map(event=>`<div class="event-row"><time>${date(event.at)}</time><span><i class="event-dot event-${event.tone}"></i>${escapeHtml(event.type)}</span><strong>${escapeHtml(event.name)}</strong><span>${escapeHtml(event.detail)}</span></div>`).join('')}</div></section><section class="ops-panel review-panel"><div class="panel-title"><div><span>MANAGER REVIEW</span><h3>오늘 접수 상담 요약 · 우선순위 및 최종 컨펌</h3></div><small>${todayCases.length}건</small></div><div class="manager-intake-list">${todaySummary}</div></section></section>`;
+  const todaySummary=todayCases.map(c=>{const approved=Boolean(c.managerApprovedAt&&c.assignedEngineer);const canApprove=Boolean(c.dispatch?.required&&c.stage==='awaiting-arrival'&&c.priorityConfirmed&&!approved);return `<article class="manager-intake ${approved?'is-approved':''}"><div class="intake-priority priority-${escapeHtml(c.priority||'normal')}">${priorityLabel(c.priority)}</div><div class="intake-copy"><strong>${escapeHtml(c.customerName)}</strong><span>${escapeHtml(c.transcript.find(m=>m.role==='counselor')?.text||'상담 요약 없음')}</span><small>${escapeHtml(c.dispatchAddress)}${approved?' · 현장 전달 완료':''}</small></div><label>우선순위<select data-priority-case="${escapeHtml(c.id)}" ${approved?'disabled':''}><option value="high" ${c.priority==='high'?'selected':''}>상</option><option value="normal" ${c.priority==='normal'?'selected':''}>중</option><option value="low" ${c.priority==='low'?'selected':''}>하</option></select></label><div class="manager-intake-actions">${approved?'<span class="assignment-chip">최종 컨펌 완료</span>':`<button type="button" class="ghost-button" data-confirm-priority="${escapeHtml(c.id)}">${c.priorityConfirmed?'우선순위 확정됨':'우선순위 확정'}</button><button type="button" class="primary-button" data-manager-approve="${escapeHtml(c.id)}" ${canApprove?'':'disabled'}>최종 컨펌</button>`}</div></article>`;}).join('');
+  const events=[...todayCases.map(c=>{if(c.stage==='complete'&&c.completedAt)return {at:c.completedAt,type:'완료',name:c.customerName,detail:'현장 수리 완료 · 사진과 최종 서명 저장',tone:'success'};return {at:c.managerApprovedAt||c.receivedAt||c.createdAt,type:c.managerApprovedAt?'전달':'접수',name:c.customerName,detail:c.managerApprovedAt?'팀장 최종 컨펌 · 현장 전달 완료':`우선순위 ${priorityLabel(c.priority)} · ${c.priorityConfirmed?'우선순위 확정':'확인 대기'}`,tone:c.managerApprovedAt?'success':c.priority==='high'?'alert':'info'};}),...dispatchCases.map(c=>({at:c.completedAt||c.assignedAt||c.receivedAt||c.createdAt,type:c.stage==='complete'?'완료':'방문',name:c.customerName,detail:`${c.assignedEngineer||'배차 대기'} · ${c.stage==='complete'?'현장 수리 완료':'오늘 방문 예정'}`,tone:c.stage==='complete'?'success':'scheduled'}))].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,10);
+  return `<section class="demo-operations ops-dashboard" aria-label="농기계 AS 통합 관제 대시보드"><header class="ops-dashboard-header"><div><span class="ops-eyebrow">FIELD SERVICE CONTROL</span><h2>농기계 AS 통합 관제</h2><p>접수 검토부터 기사 배차, 현장 완료까지 한 화면에서 확인합니다.</p></div><div class="ops-live"><span></span><strong>운영 중</strong><small>${today} · 본점 기준</small></div></header><div class="dashboard-stats ops-kpis"><article><span>오늘 접수</span><strong>${todayCases.length}</strong><small>최종 컨펌 ${approvedToday.length}건</small></article><article><span>오늘 수리 예약</span><strong>${dispatchCases.length}</strong><small>접수일과 방문일 분리</small></article><article><span>현장 완료</span><strong>${completedToday.length}</strong><small>예정 ${scheduledToday.length}건</small></article><article><span>최근 30일 고객</span><strong>${recent30.length}</strong><small>우선 확인 ${highPriority}건</small></article></div><div class="ops-board"><aside class="ops-panel intake-monitor"><div class="panel-title"><div><span>INTAKE</span><h3>접수 검토 현황</h3></div><b>${confirmedToday.length}/${todayCases.length}</b></div><div class="donut-wrap"><div class="status-donut" style="--progress:${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}"><strong>${todayCases.length?Math.round(confirmedToday.length/todayCases.length*100):0}%</strong><small>우선순위 확정</small></div></div><dl class="monitor-list"><div><dt>우선순위 상</dt><dd class="text-alert">${highPriority}건</dd></div><div><dt>최종 컨펌</dt><dd>${approvedToday.length}건</dd></div><div><dt>배차 대기</dt><dd>${managerQueue.length}건</dd></div></dl><p class="ops-rule">오늘 접수는 오늘 수리 예약과 분리합니다. 우선순위를 확인하고 최종 컨펌하면 현장 단계로 전달됩니다.</p></aside><section class="ops-panel topology-panel"><div class="panel-title"><div><span>WORKFLOW TOPOLOGY</span><h3>접수 → 검토 → 배차 → 현장 완료</h3></div><small>실시간 데모 데이터</small></div><div class="topology-flow"><div class="topology-source"><div class="flow-node source-node"><span aria-hidden="true">☎</span><strong>오늘 접수</strong><small>${todayCases.length}건</small></div><i aria-hidden="true"></i><div class="flow-node manager-node"><span aria-hidden="true">✓</span><strong>팀장 검토</strong><small>${approvedToday.length}건 최종 컨펌</small></div><i aria-hidden="true"></i><div class="flow-node hub-node"><span aria-hidden="true">⌘</span><strong>통합 배차</strong><small>거리·시간 최적화</small></div></div><div class="topology-branches">${engineerLanes}</div></div><div class="topology-legend"><span><i class="legend-complete"></i>완료 ${completedToday.length}</span><span><i class="legend-scheduled"></i>예정 ${scheduledToday.length}</span><span><i class="legend-review"></i>접수 검토 ${todayCases.length}</span></div></section><aside class="ops-panel workload-panel"><div class="panel-title"><div><span>ENGINEERS</span><h3>기사별 처리 현황</h3></div><b>${completedToday.length}/${dispatchCases.length}</b></div><div class="workload-list">${workload}</div><div class="completion-summary"><span>오늘 완료율</span><strong>${dispatchCases.length?Math.round(completedToday.length/dispatchCases.length*100):0}%</strong><small>기사당 최대 5건 · 동일 통합 역량</small></div></aside></div><section class="ops-panel event-panel"><div class="panel-title"><div><span>LIVE EVENTS</span><h3>오늘 운영 이벤트</h3></div><small>최근 ${events.length}건</small></div><div class="event-table"><div class="event-table-head"><span>시간</span><span>구분</span><span>고객</span><span>처리 상태</span></div>${events.map(event=>`<div class="event-row"><time>${date(event.at)}</time><span><i class="event-dot event-${event.tone}"></i>${escapeHtml(event.type)}</span><strong>${escapeHtml(event.name)}</strong><span>${escapeHtml(event.detail)}</span></div>`).join('')}</div></section><section class="ops-panel review-panel"><div class="panel-title"><div><span>MANAGER REVIEW</span><h3>오늘 접수 상담 요약 · 우선순위 및 최종 컨펌</h3></div><small>${todayCases.length}건</small></div><div class="manager-intake-list">${todaySummary}</div></section></section>`;
 }
 function managerView() {
   const {done,todo}=dashboardStats(state.cases);
@@ -543,9 +595,9 @@ $('#conversation').addEventListener('change',event=>{
 $('#conversation').addEventListener('input',event=>{
   if(event.target.closest('#close-form'))updateCloseButton();
   const form=event.target.closest('#plan-form'); if(!form)return;
-  const data=new FormData(form);
-  try {const parts=parseParts(String(data.get('partsChat')),state.catalog);const fee=travelFee({region:data.get('region'),distanceKm:data.get('distanceKm')});$('#quote-preview').textContent=`부품비 ${won(parts.reduce((sum,p)=>sum+p.qty*p.unitPrice,0))} + 출장비 ${won(fee)} = ${won(estimateTotal({parts,travelFee:fee}))}`;}
-  catch(error){$('#quote-preview').textContent=error.message;}
+  if(event.target.id==='part-search'){renderPartSuggestions(event.target.value);return;}
+  if(event.target.matches('[data-part-qty]')){syncSelectedParts();return;}
+  updateQuotePreview(form);
 });
 $('#conversation').addEventListener('click',async event=>{
   if(event.target.id!=='batch-assign' || routeBusy)return;
