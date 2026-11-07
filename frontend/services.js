@@ -65,7 +65,20 @@ export function createCase(customerId, equipmentId) {
   };
 }
 
-export async function replyToCounselor(item, rawText) {
+function deltaText(payload) {
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload)) return payload.map(deltaText).join('');
+  if (!payload || typeof payload !== 'object') return '';
+  const kind = String(payload.type || '').toLowerCase();
+  if (['thinking', 'reasoning', 'tool', 'tool_call'].some(name => kind.includes(name))) return '';
+  if (typeof payload.text === 'string') return payload.text;
+  if (typeof payload.content === 'string') return payload.content;
+  if (Array.isArray(payload.content)) return deltaText(payload.content);
+  if (payload.delta) return deltaText(payload.delta);
+  return '';
+}
+
+export async function replyToCounselor(item, rawText, onDelta = null) {
   const history = item.transcript.slice(-20).map(message => ({
     role: message.role === 'assistant' ? 'assistant' : 'user',
     content: String(message.text || '')
@@ -74,15 +87,53 @@ export async function replyToCounselor(item, rawText) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caseId: item.id, message: rawText, history }),
-    signal: AbortSignal.timeout(35000)
+    signal: AbortSignal.timeout(120000)
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(detail.detail || 'AgentStream 상담 연결 실패');
   }
-  const result = await response.json();
-  if (!result.reply) throw new Error('AgentStream 답변 없음');
-  return result.reply;
+  if (!response.body) throw new Error('AgentStream 스트림이 비어 있습니다.');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const seen = new Set();
+  let buffer = '';
+  let answer = '';
+  let completed = false;
+
+  const consume = line => {
+    if (!line.trim()) return;
+    let event;
+    try { event = JSON.parse(line); }
+    catch { throw new Error('AgentStream 응답 형식이 올바르지 않습니다.'); }
+    if (!event || typeof event !== 'object') return;
+    if (event.event_id && seen.has(event.event_id)) return;
+    if (event.event_id) seen.add(event.event_id);
+    const type = String(event.type || event.event || '').toLowerCase();
+    const payload = event.data && typeof event.data === 'object' ? event.data : event;
+    if (type === 'assistant.delta' || type.endsWith('.assistant.delta')) {
+      const text = deltaText(payload.content ?? payload.delta ?? payload);
+      if (text) { answer += text; onDelta?.(answer); }
+      return;
+    }
+    if (type === 'turn.completed' || type.endsWith('.turn.completed')) { completed = true; return; }
+    if (type === 'turn.failed' || type === 'tool.failed' || type.endsWith('.turn.failed') || type.endsWith('.tool.failed')) {
+      throw new Error(payload.message || payload.error || 'AgentStream 답변 생성에 실패했습니다.');
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    lines.forEach(consume);
+    if (done) break;
+  }
+  if (buffer.trim()) consume(buffer);
+  if (!completed) throw new Error('AgentStream 답변이 정상적으로 완료되지 않았습니다.');
+  if (!answer.trim()) throw new Error('AgentStream 답변 없음');
+  return answer.trim();
 }
 
 export async function buildAnalysis(item, previousCases, flags, manualChoice) {

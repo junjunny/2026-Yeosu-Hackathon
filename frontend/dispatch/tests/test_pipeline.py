@@ -108,19 +108,108 @@ class DispatchTests(unittest.TestCase):
         self.assertTrue(any(error['id'] == 'REAL-1' for error in data['addressErrors']))
 
     def test_agentstream_proxy_keeps_key_server_side(self):
-        request = httpx.Request('POST', 'https://agent.example/chat')
-        response = httpx.Response(200, request=request, json={'answer': '안전한 장소에 정차했는지 확인해 주세요.'})
+        health = httpx.Response(200, json={'status': 'healthy', 'message': 'ok', 'checked_at': 'now'})
+        session = httpx.Response(201, json={'session_id': 'session-1'})
+        calls = []
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            def iter_lines(self):
+                return iter([
+                    '{"type":"assistant.delta","event_id":"1","content":"안전한 장소에 "}',
+                    '{"type":"assistant.delta","event_id":"2","content":"정차해 주세요."}',
+                    '{"type":"turn.completed","event_id":"3"}',
+                ])
+
+        class FakeStreamContext:
+            def __enter__(self):
+                return FakeStreamResponse()
+
+            def __exit__(self, *_args):
+                return False
+
+        class FakeClient:
+            def __init__(self, **_kwargs):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                calls.append((method, url, kwargs))
+                return FakeStreamContext()
+
+            def close(self):
+                pass
+
         with patch.dict(os.environ, {
-            'AGENTSTREAM_URL': 'https://agent.example/chat',
+            'AGENTSTREAM_BASE_URL': 'https://agent.example/agentstream',
+            'AGENTSTREAM_CHATBOT_ID': 'chatbot-1',
             'AGENTSTREAM_API_KEY': 'server-only-key',
-        }), patch.object(service.httpx, 'post', return_value=response) as post:
+        }), patch.object(service.httpx, 'get', return_value=health) as get, patch.object(
+            service.httpx, 'post', return_value=session
+        ) as post, patch.object(service.httpx, 'Client', FakeClient):
+            with service.agent_session_lock:
+                service.agent_sessions.clear()
             result = self.client().post('/api/agentstream/chat', json={
                 'caseId': 'CASE-1', 'message': '시동이 안 걸려요', 'history': []
             })
         self.assertEqual(result.status_code, 200)
-        self.assertIn('정차', result.json()['reply'])
-        self.assertEqual(post.call_args.kwargs['headers']['Authorization'], 'Bearer server-only-key')
+        self.assertEqual(result.headers['content-type'], 'application/x-ndjson')
+        self.assertIn('turn.completed', result.text)
+        self.assertEqual(get.call_args.kwargs['headers']['X-API-Key'], 'server-only-key')
+        self.assertEqual(post.call_args.kwargs['headers']['X-API-Key'], 'server-only-key')
+        self.assertEqual(calls[0][2]['headers']['X-API-Key'], 'server-only-key')
+        self.assertEqual(post.call_args.args[0], 'https://agent.example/agentstream/open/v1/chatbots/chatbot-1/sessions')
+        self.assertEqual(calls[0][1], 'https://agent.example/agentstream/open/v1/chat-sessions/session-1/messages')
+        self.assertNotIn('server-only-key', result.text)
         self.assertNotIn('server-only-key', self.client().get('/api/dispatch/config').text)
+
+    def test_agentstream_session_is_reused_for_same_visitor_and_case(self):
+        health = httpx.Response(200, json={'status': 'healthy'})
+        sessions = [httpx.Response(201, json={'session_id': 'session-1'})]
+
+        class FakeStreamResponse:
+            status_code = 200
+
+            def iter_lines(self):
+                return iter(['{"type":"assistant.delta","content":"답변"}', '{"type":"turn.completed"}'])
+
+        class FakeStreamContext:
+            def __enter__(self): return FakeStreamResponse()
+            def __exit__(self, *_args): return False
+
+        class FakeClient:
+            def __init__(self, **_kwargs): pass
+            def stream(self, *_args, **_kwargs): return FakeStreamContext()
+            def close(self): pass
+
+        with patch.dict(os.environ, {
+            'AGENTSTREAM_BASE_URL': 'https://agent.example/agentstream',
+            'AGENTSTREAM_CHATBOT_ID': 'chatbot-1',
+            'AGENTSTREAM_API_KEY': 'server-only-key',
+        }), patch.object(service.httpx, 'get', return_value=health), patch.object(
+            service.httpx, 'post', side_effect=sessions
+        ) as post, patch.object(service.httpx, 'Client', FakeClient):
+            with service.agent_session_lock:
+                service.agent_sessions.clear()
+            client = self.client()
+            first = client.post('/api/agentstream/chat', json={'caseId': 'CASE-2', 'message': '첫 질문'})
+            second = client.post('/api/agentstream/chat', json={'caseId': 'CASE-2', 'message': '후속 질문'})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(post.call_count, 1)
+
+    def test_agentstream_health_failure_is_not_reported_as_chat_answer(self):
+        health = httpx.Response(200, json={'status': 'unhealthy', 'message': 'embedding unavailable'})
+        with patch.dict(os.environ, {
+            'AGENTSTREAM_BASE_URL': 'https://agent.example/agentstream',
+            'AGENTSTREAM_CHATBOT_ID': 'chatbot-1',
+            'AGENTSTREAM_API_KEY': 'server-only-key',
+        }), patch.object(service.httpx, 'get', return_value=health):
+            with service.agent_session_lock:
+                service.agent_sessions.clear()
+            result = self.client().post('/api/agentstream/chat', json={'caseId': 'CASE-3', 'message': '질문'})
+        self.assertEqual(result.status_code, 503)
+        self.assertIn('정상 상태', result.json()['detail'])
 
     def test_fallback_route_stops_at_last_visit(self):
         route = fallback_route([126.7, 35.0], [{'coordinates': [126.8, 35.0]}])

@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from threading import Lock
 from pydantic import BaseModel, Field
 import httpx
@@ -23,6 +23,11 @@ app = FastAPI(title='Fieldnote 배차 데모')
 runs = {}
 run_lock = Lock()
 mapper = Maps()
+agent_sessions = {}
+agent_session_lock = Lock()
+AGENTSTREAM_DEFAULT_BASE_URL = 'https://api-gateway.jntp-ax.or.kr/agentstream'
+AGENTSTREAM_DEFAULT_CHATBOT_ID = '7071ed89-8e48-49ef-849f-654a4997948b'
+VISITOR_COOKIE = 'fieldnote_visitor_id'
 HQ_ADDRESS = os.getenv('HQ_ADDRESS', '전라남도 나주시 왕곡면 혁신산단6길 9')
 HQ_COORDINATES = [
     float(os.getenv('HQ_LNG', '126.6928956')),
@@ -133,55 +138,123 @@ class AgentChatBody(BaseModel):
     history: list[dict] = Field(default_factory=list, max_length=40)
 
 
-def agentstream_text(payload):
-    if isinstance(payload, str):
-        return payload.strip()
-    if not isinstance(payload, dict):
-        return ''
-    for key in ('reply', 'answer', 'output', 'content', 'message', 'text'):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        if isinstance(value, dict):
-            nested = agentstream_text(value)
-            if nested:
-                return nested
-    choices = payload.get('choices')
-    if isinstance(choices, list) and choices:
-        return agentstream_text(choices[0])
-    data = payload.get('data')
-    return agentstream_text(data)
+def agentstream_settings():
+    base_url = os.getenv('AGENTSTREAM_BASE_URL', AGENTSTREAM_DEFAULT_BASE_URL).strip().rstrip('/')
+    chatbot_id = os.getenv('AGENTSTREAM_CHATBOT_ID', AGENTSTREAM_DEFAULT_CHATBOT_ID).strip()
+    api_key = os.getenv('AGENTSTREAM_API_KEY', '').strip()
+    if not base_url or not chatbot_id or not api_key:
+        raise HTTPException(503, 'AgentStream 서버 설정이 없습니다. 운영자에게 연결을 요청해 주세요.')
+    return base_url, chatbot_id, api_key
+
+
+def agentstream_headers(api_key):
+    return {'X-API-Key': api_key, 'Accept': 'application/json'}
+
+
+def agentstream_http_error(response, operation):
+    if response.status_code == 401:
+        detail = 'AgentStream 인증 키가 없거나 유효하지 않습니다.'
+    elif response.status_code == 403:
+        detail = 'AgentStream 챗봇 호출 권한을 확인해 주세요.'
+    elif response.status_code == 404:
+        detail = 'AgentStream API 경로 또는 챗봇 설정을 확인해 주세요.'
+    elif response.status_code == 422:
+        detail = 'AgentStream 요청 형식을 확인해 주세요.'
+    elif response.status_code in (429, 503):
+        detail = 'AgentStream이 일시적으로 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+    else:
+        detail = f'AgentStream {operation}에 실패했습니다. (HTTP {response.status_code})'
+    return HTTPException(response.status_code if response.status_code < 500 else 502, detail)
+
+
+def agentstream_session(visitor_id, case_id, first_message, base_url, chatbot_id, api_key):
+    key = (visitor_id, case_id)
+    with agent_session_lock:
+        existing = agent_sessions.get(key)
+    if existing:
+        return existing, False
+
+    headers = agentstream_headers(api_key)
+    try:
+        health = httpx.get(
+            f'{base_url}/open/v1/chatbots/{chatbot_id}/health',
+            headers=headers,
+            timeout=15,
+        )
+        if health.status_code != 200:
+            raise agentstream_http_error(health, 'health 확인')
+        health_payload = health.json()
+        if health_payload.get('status') == 'unhealthy':
+            raise HTTPException(503, 'AgentStream 챗봇이 현재 정상 상태가 아닙니다.')
+
+        session = httpx.post(
+            f'{base_url}/open/v1/chatbots/{chatbot_id}/sessions',
+            json={'query': first_message},
+            headers=headers,
+            timeout=30,
+        )
+        if session.status_code != 201:
+            raise agentstream_http_error(session, '세션 생성')
+        session_id = session.json().get('session_id')
+        if not isinstance(session_id, str) or not session_id:
+            raise HTTPException(502, 'AgentStream 세션 ID가 응답되지 않았습니다.')
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(502, 'AgentStream 연결에 실패했습니다.') from error
+
+    with agent_session_lock:
+        if len(agent_sessions) >= 2048:
+            agent_sessions.pop(next(iter(agent_sessions)))
+        agent_sessions[key] = session_id
+    return session_id, True
 
 
 @app.post('/api/agentstream/chat')
-def agentstream_chat(body: AgentChatBody):
-    url = os.getenv('AGENTSTREAM_URL', '').strip()
-    api_key = os.getenv('AGENTSTREAM_API_KEY', '').strip()
-    if not url or not api_key:
-        raise HTTPException(503, 'AgentStream URL과 API 키를 .env에 설정해 주세요.')
-    header_name = os.getenv('AGENTSTREAM_AUTH_HEADER', 'Authorization').strip()
-    scheme = os.getenv('AGENTSTREAM_AUTH_SCHEME', 'Bearer').strip()
-    auth_value = f'{scheme} {api_key}'.strip()
-    request_body = {
-        'message': body.message,
-        'conversation_id': body.caseId,
-        'history': body.history[-20:],
-    }
+def agentstream_chat(body: AgentChatBody, request: Request):
+    base_url, chatbot_id, api_key = agentstream_settings()
+    visitor_id = request.cookies.get(VISITOR_COOKIE) or uuid.uuid4().hex
+    session_id, created = agentstream_session(
+        visitor_id, body.caseId, body.message, base_url, chatbot_id, api_key
+    )
+    stream_url = f'{base_url}/open/v1/chat-sessions/{session_id}/messages'
+    client = httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0))
+    stream = client.stream(
+        'POST',
+        stream_url,
+        json={'message': body.message},
+        headers={'X-API-Key': api_key, 'Accept': 'application/x-ndjson', 'Content-Type': 'application/json'},
+    )
     try:
-        response = httpx.post(
-            url,
-            json=request_body,
-            headers={header_name: auth_value, 'Accept': 'application/json'},
-            timeout=30,
-            follow_redirects=False,
-        )
-        response.raise_for_status()
-        reply = agentstream_text(response.json())
-    except (httpx.HTTPError, ValueError) as error:
-        raise HTTPException(502, 'AgentStream 호출에 실패했습니다.') from error
-    if not reply:
-        raise HTTPException(502, 'AgentStream 응답에서 답변 텍스트를 찾지 못했습니다.')
-    return {'reply': reply, 'provider': 'agentstream'}
+        upstream = stream.__enter__()
+        if upstream.status_code != 200:
+            error = agentstream_http_error(upstream, '메시지 전송')
+            stream.__exit__(None, None, None)
+            client.close()
+            raise error
+    except HTTPException:
+        raise
+    except httpx.HTTPError as error:
+        client.close()
+        raise HTTPException(502, 'AgentStream 메시지 연결에 실패했습니다.') from error
+
+    def lines():
+        try:
+            for line in upstream.iter_lines():
+                if line:
+                    if isinstance(line, bytes):
+                        line = line.decode('utf-8')
+                    yield line if line.endswith('\n') else line + '\n'
+        finally:
+            stream.__exit__(None, None, None)
+            client.close()
+
+    result = StreamingResponse(lines(), media_type='application/x-ndjson')
+    if not request.cookies.get(VISITOR_COOKIE):
+        result.set_cookie(VISITOR_COOKIE, visitor_id, httponly=True, samesite='lax', max_age=60 * 60 * 24 * 30)
+    if created:
+        result.headers['X-Fieldnote-Session'] = 'created'
+    return result
 
 
 @app.get('/api/dispatch/config')

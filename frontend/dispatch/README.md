@@ -12,7 +12,7 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 
 `.env`에 `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`을 넣고 `http://localhost:8501/dispatch/`를 엽니다. 네이버 지도 Web 서비스 URL에는 실제 접속 호스트를 등록해야 합니다. 키가 없거나 외부 호출이 실패해도 합성 좌표와 직선 경로로 전체 데모가 계속 동작합니다.
 
-상담사 AgentStream 연결에는 `AGENTSTREAM_URL`, `AGENTSTREAM_API_KEY`를 설정합니다. 기본 인증은 `Authorization: Bearer <key>`이며 서비스 규격이 다르면 `AGENTSTREAM_AUTH_HEADER`, `AGENTSTREAM_AUTH_SCHEME`을 바꿉니다. 키와 Client Secret은 서버에서만 사용하고 브라우저 응답에 포함하지 않습니다.
+상담사 AgentStream 연결에는 `AGENTSTREAM_BASE_URL`, `AGENTSTREAM_CHATBOT_ID`, `AGENTSTREAM_API_KEY`를 설정합니다. 서버가 health 확인 → 세션 생성 → 세션 메시지 스트림 순서로 호출하고 `X-API-Key`를 외부 요청에만 보냅니다. 브라우저에는 키를 내려보내지 않으며, 방문자 쿠키와 접수 ID별로 AgentStream 세션을 격리합니다. `.env`는 Git에 커밋하지 마세요.
 
 ## 입력
 
@@ -29,6 +29,10 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 4. 브라우저 지도 표시 — 실제 도로선 또는 `대체 경로` 점선
 
 전체 실행은 `POST /api/dispatch/run`입니다. 상담 채팅은 `POST /api/agentstream/chat`을 사용합니다.
+
+## AgentStream 스트리밍
+
+`POST /api/agentstream/chat`은 AgentStream의 NDJSON을 브라우저로 전달합니다. 프런트는 UTF-8 청크 경계와 여러 JSON 줄을 안전하게 처리하고 `assistant.delta`만 답변으로 합칩니다. `thinking`, `reasoning`, `tool` 블록은 표시하지 않으며 `turn.completed`가 없는 종료, 실패 이벤트, 잘못된 JSON, 취소·타임아웃을 오류로 표시합니다.
 
 ## 검증
 

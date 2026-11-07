@@ -232,9 +232,19 @@ $('#conversation').addEventListener('submit', async event => {
     if (sending || item.stage !== 'counseling') return;
     const text = String(data.get('text')).trim(); if (!text) return;
     item.transcript.push(entry('counselor', text)); sending = true; item.status = '사례 확인 중'; persist(); render();
-    try { item.transcript.push(entry('assistant', await replyToCounselor(item, text))); }
-    catch (error) { item.transcript.push(entry('assistant', `AgentStream 연결 실패: ${error.message || '설정을 확인해 주세요.'}\n고객의 안전 상태를 먼저 확인하고 기술 답변은 확인 필요로 남겨 주세요.`)); }
-    item.status = '상담 중'; sending = false; if (persist()) render(); return;
+    let streamedReply;
+    try {
+      const reply = await replyToCounselor(item, text, partial => {
+        streamedReply ||= entry('assistant', '답변 생성 중…');
+        streamedReply.text = partial;
+        if (!item.transcript.includes(streamedReply)) item.transcript.push(streamedReply);
+        persist(); render('bottom');
+      });
+      if (streamedReply) streamedReply.text = reply;
+      else item.transcript.push(entry('assistant', reply));
+    }
+    catch (error) { item.transcript.push(entry('assistant', `AgentStream 연결 실패: ${error.message || '설정을 확인해 주세요.'}\n고객의 안전 상태를 먼저 확인하고 기술 답변은 확인 필요로 남겨 주세요.`)); item.status = '상담 연결 실패'; }
+    if (item.status !== '상담 연결 실패') item.status = '상담 중'; sending = false; if (persist()) render(); return;
   }
   if (form.id === 'close-form') {
     if (item.stage !== 'counseling' || sending) return;
