@@ -234,6 +234,11 @@ def engineer_agentstream_chat(body: AgentChatBody, request: Request):
     return agentstream_proxy(body, request, engineer=True)
 
 
+@app.post('/engineer-help/api/agentstream/chat')
+def legacy_engineer_agentstream_chat(body: AgentChatBody, request: Request):
+    return agentstream_proxy(body, request, engineer=True)
+
+
 def agentstream_proxy(body: AgentChatBody, request: Request, engineer=False):
     base_url, chatbot_id, api_key = agentstream_settings(engineer)
     visitor_id = request.cookies.get(VISITOR_COOKIE) or uuid.uuid4().hex
