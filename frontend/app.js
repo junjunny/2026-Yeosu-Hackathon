@@ -28,6 +28,17 @@ let sending = false;
 const DEMO_DATA_URL = './data/farmingboy_customers_100.json';
 const DEMO_SEED_VERSION = 'farmingboy-customers-100-v6-balanced-field-progress';
 const MANAGER_PASSWORD = '1234';
+const DEMO_CHOICES = {
+  customerName: ['한준희'],
+  address: ['전남광주 나주시 금성관길 6-1'],
+  symptom: ['딱딱 소리가 나고, 브레이크가 밀리는 것 같다.'],
+  repairHistory: ['과거 수리 이력 없음'],
+  productName: ['파밍보이2.0A', '파밍바오2.0W', '파파4', '파파', '접고타', '댕기보이', '모두타'],
+  purchaseDate: ['2023.08.19'],
+  findings: ['브레이크 문제로 출동했지만, 현장에서 함께 점검한 결과 뒷바퀴 타이어의 마모 상태도 좋지 않은 것을 확인했습니다.'],
+  repairPlan: ['제동 성능을 회복하기 위해 브레이크 패드를 교체하고, 마모가 심한 뒷바퀴 타이어 한 개를 함께 교체할 예정입니다.'],
+  repairNotes: ['브레이크 패드와 뒷바퀴 타이어 한 개를 교체했습니다. 교체 후 제동 상태와 주행 상태를 다시 점검했으며, 장비가 정상적으로 작동하는 것을 확인했습니다.']
+};
 
 function demoPhoto(label, index, after = false) {
   const colors = after ? ['#dff5e9', '#e7efff', '#fff0d9'] : ['#eef1ff', '#f3e9ff', '#e8f5f5'];
@@ -156,10 +167,13 @@ function bubble(role, text, createdAt, extra = '', authorName = '') {
 }
 function labelBadge(text, style = '') { return `<span class="badge ${style}">${escapeHtml(text)}</span>`; }
 function statusText(item) { return item?.status || '접수 준비'; }
+function demoChoices(name, values) {
+  return `<div class="demo-choices" aria-label="시연 입력 보기"><span>시연 보기</span>${values.map(value => `<button type="button" data-demo-target="${escapeHtml(name)}" data-demo-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join('')}</div>`;
+}
 
 function startView() {
   return `<div class="welcome"><div class="welcome-icon" aria-hidden="true">✳</div><h2>고객의 말을 그대로 기록하세요.</h2><p>실구매자이자 실사용자인 고객의 정보로 접수합니다. 등록 주소와 고장 발생 위치를 구분해 주세요.</p></div>
-  <form id="start-form" class="stage-form card"><h3>상담 시작</h3><label>고객 이름 · 실구매자 / 실사용자<input name="customerName" required maxlength="80" autocomplete="name"></label><label>등록 주소<input name="registeredAddress" required maxlength="300" autocomplete="street-address"><small>제품에 등록된 주소를 입력합니다. 고장이 발생한 장소가 아닙니다.</small></label><label>출동 장소<input name="dispatchAddress" required maxlength="300" autocomplete="off"></label><label>장비 식별 정보 (선택)<input name="equipmentId" maxlength="100" placeholder="ERP 제품명은 통화 종료 후 입력합니다."></label><button class="primary-button" type="submit">상담 시작</button></form><p class="demo-note">시연에는 합성 고객 정보만 입력하세요.</p>`;
+  <form id="start-form" class="stage-form card"><h3>상담 시작</h3><label>고객 이름 · 실구매자 / 실사용자<input name="customerName" required maxlength="80" autocomplete="name">${demoChoices('customerName', DEMO_CHOICES.customerName)}</label><label>등록 주소<input name="registeredAddress" required maxlength="300" autocomplete="street-address">${demoChoices('registeredAddress', DEMO_CHOICES.address)}<small>제품에 등록된 주소를 입력합니다. 고장이 발생한 장소가 아닙니다.</small></label><label>출동 장소<input name="dispatchAddress" required maxlength="300" autocomplete="off">${demoChoices('dispatchAddress', DEMO_CHOICES.address)}</label><label>장비 식별 정보 (선택)<input name="equipmentId" maxlength="100" placeholder="ERP 제품명은 통화 종료 후 입력합니다."></label><button class="primary-button" type="submit">상담 시작</button></form><p class="demo-note">시연에는 합성 고객 정보만 입력하세요.</p>`;
 }
 
 function transcript(item, engineerView = false) {
@@ -169,7 +183,7 @@ function transcript(item, engineerView = false) {
 }
 
 function callEndForm(item) {
-  return `<article class="message"><div class="avatar" aria-hidden="true">F</div><div class="message-body"><div class="message-head"><strong>Fieldnote</strong></div><div class="card"><div class="card-title"><span class="step-index">2</span><div><h3>통화 종료 전 재확인</h3><p>입력한 내용과 아래 항목을 다시 확인한 뒤 통화를 종료하세요.</p></div></div><form id="close-form" class="form-grid"><label>접수 구분<select name="incidentType" id="incident-type" required><option value="breakdown">고장</option><option value="accident">사고</option></select></label><label class="insurance-field" hidden>보험수리 가능 여부<select name="insuranceRepair" id="insurance-repair"><option value="unknown">확인 필요</option><option value="yes">가능</option><option value="no">불가</option></select></label><label class="insurance-enrollment" hidden>보험 가입 여부<select name="insuranceEnrolled"><option value="unknown">확인 필요</option><option value="yes">가입</option><option value="no">미가입</option></select></label><label>상담 우선순위<select name="priority"><option value="high">상</option><option value="normal" selected>중</option><option value="low">하</option></select></label><div class="full">${yesNo('visitRequested', '고객이 방문을 요청했나요?')}${yesNo('cannotDrive', '주행이 불가능한가요?')}${yesNo('selfCareWanted', '고객이 직접 조치하기를 원하나요?')}</div><label class="full">일반 건 출동 여부<select name="manualChoice" required><option value="">선택해 주세요</option><option value="yes">출동</option><option value="no">원격 안내</option></select><small>고객 요청·주행 불가·유사 사례 없음 규칙에 해당하면 이 선택보다 출동 규칙이 우선합니다.</small></label><fieldset class="full erp-fields"><legend>ERP 확인 후 직접 입력</legend><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" placeholder="이력이 없으면 없음, 확인 불가이면 사유를 입력하세요."></textarea></label><label>제품명<input name="productName" required maxlength="150"></label><label>구입 시점<input name="purchaseDate" required maxlength="80"></label><label>출동 장소<input name="dispatchAddress" required maxlength="300" value="${escapeHtml(item.dispatchAddress || '')}"></label></fieldset><div class="form-actions full"><button class="ghost-button" type="button" id="cancel-close">통화 계속</button><button id="finish-call" class="primary-button" type="submit" disabled>통화 종료 · 기록 잠금</button></div></form></div></div></article>`;
+  return `<article class="message"><div class="avatar" aria-hidden="true">F</div><div class="message-body"><div class="message-head"><strong>Fieldnote</strong></div><div class="card"><div class="card-title"><span class="step-index">2</span><div><h3>통화 종료 전 재확인</h3><p>입력한 내용과 아래 항목을 다시 확인한 뒤 통화를 종료하세요.</p></div></div><form id="close-form" class="form-grid"><label>접수 구분<select name="incidentType" id="incident-type" required><option value="breakdown">고장</option><option value="accident">사고</option></select></label><label class="insurance-field" hidden>보험수리 가능 여부<select name="insuranceRepair" id="insurance-repair"><option value="unknown">확인 필요</option><option value="yes">가능</option><option value="no">불가</option></select></label><label class="insurance-enrollment" hidden>보험 가입 여부<select name="insuranceEnrolled"><option value="unknown">확인 필요</option><option value="yes">가입</option><option value="no">미가입</option></select></label><label>상담 우선순위<select name="priority"><option value="high">상</option><option value="normal" selected>중</option><option value="low">하</option></select></label><div class="full">${yesNo('visitRequested', '고객이 방문을 요청했나요?')}${yesNo('cannotDrive', '주행이 불가능한가요?')}${yesNo('selfCareWanted', '고객이 직접 조치하기를 원하나요?')}</div><label class="full">일반 건 출동 여부<select name="manualChoice" required><option value="">선택해 주세요</option><option value="yes">출동</option><option value="no">원격 안내</option></select><small>고객 요청·주행 불가·유사 사례 없음 규칙에 해당하면 이 선택보다 출동 규칙이 우선합니다.</small></label><fieldset class="full erp-fields"><legend>ERP 확인 후 직접 입력</legend><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" placeholder="이력이 없으면 없음, 확인 불가이면 사유를 입력하세요."></textarea>${demoChoices('repairHistory', DEMO_CHOICES.repairHistory)}</label><label>제품명<input name="productName" required maxlength="150">${demoChoices('productName', DEMO_CHOICES.productName)}</label><label>구입 시점<input name="purchaseDate" required maxlength="80">${demoChoices('purchaseDate', DEMO_CHOICES.purchaseDate)}</label><label>출동 장소<input name="dispatchAddress" required maxlength="300" value="${escapeHtml(item.dispatchAddress || '')}">${demoChoices('dispatchAddress', DEMO_CHOICES.address)}</label></fieldset><div class="form-actions full"><button class="ghost-button" type="button" id="cancel-close">통화 계속</button><button id="finish-call" class="primary-button" type="submit" disabled>통화 종료 · 기록 잠금</button></div></form></div></div></article>`;
 }
 function yesNo(name, question) {
   return `<fieldset class="choice-field"><legend>${escapeHtml(question)}</legend><label><input type="radio" name="${name}" value="yes" required><span>예</span></label><label><input type="radio" name="${name}" value="no" required><span>아니요</span></label></fieldset>`;
@@ -178,7 +192,7 @@ function yesNo(name, question) {
 function counselorView(item) {
   let html = transcript(item);
   if (item.stage === 'counseling') {
-    html += state.closeFormOpen ? callEndForm(item) : `<form id="counselor-chat" class="note-composer chat-composer"><label class="sr-only" for="counselor-text">전화 상담 원문</label><textarea id="counselor-text" name="text" rows="3" maxlength="4000" required autocomplete="off" placeholder="고객이 말한 내용을 거의 그대로 입력하세요…"></textarea><button type="submit" aria-label="상담 내용 보내기" ${sending ? 'disabled' : ''}>↗</button></form><div class="chat-actions"><span>입력한 문장은 요약하지 않고 보관됩니다.</span><button id="open-close" class="ghost-button" type="button" ${!sending && item.transcript.some(m => m.role === 'counselor') ? '' : 'disabled'}>통화 종료</button></div>`;
+    html += state.closeFormOpen ? callEndForm(item) : `<form id="counselor-chat" class="note-composer chat-composer"><label class="sr-only" for="counselor-text">전화 상담 원문</label><textarea id="counselor-text" name="text" rows="3" maxlength="4000" required autocomplete="off" placeholder="고객이 말한 내용을 거의 그대로 입력하세요…"></textarea><button type="submit" aria-label="상담 내용 보내기" ${sending ? 'disabled' : ''}>↗</button>${demoChoices('text', DEMO_CHOICES.symptom)}</form><div class="chat-actions"><span>입력한 문장은 요약하지 않고 보관됩니다.</span><button id="open-close" class="ghost-button" type="button" ${!sending && item.transcript.some(m => m.role === 'counselor') ? '' : 'disabled'}>통화 종료</button></div>`;
   } else {
     const decision = item.dispatch;
     html += `<div class="locked-note" role="status"><span aria-hidden="true">🔒</span><div><strong>통화가 종료되었습니다.</strong><p>상담사 대화는 읽기 전용입니다. 출동 결과: ${decision ? `${decision.required ? '출동' : '원격 안내'} (${escapeHtml(decision.rule)})` : '분석 중'}</p></div></div>`;
@@ -223,15 +237,15 @@ function stageForm(item) {
     case 'awaiting-arrival':
       return `<form id="arrival-form" class="note-composer chat-composer"><label class="sr-only" for="arrival-text">현장 도착 메시지</label><input id="arrival-text" name="text" required autocomplete="off" placeholder="현장에 도착하면 ‘도착’이라고 입력하세요…"><button type="submit" aria-label="도착 메시지 보내기">↗</button></form>`;
     case 'checklist':
-      return `<form id="checklist-form" class="stage-form"><div class="checklist">${item.analysis.checklist.map((step, i) => `<label class="check-row"><input type="checkbox" name="step" value="${i}"><span>${escapeHtml(step)}</span></label>`).join('')}</div><label>고객과 확인한 점검 결과<textarea name="findings" rows="3" required maxlength="2000" placeholder="브레이크·타이어 상태와 고객 증상 확인 결과"></textarea></label><button class="primary-button" type="submit">체크 결과 보내기</button></form>`;
+      return `<form id="checklist-form" class="stage-form"><div class="checklist">${item.analysis.checklist.map((step, i) => `<label class="check-row"><input type="checkbox" name="step" value="${i}"><span>${escapeHtml(step)}</span></label>`).join('')}</div><label>고객과 확인한 점검 결과<textarea name="findings" rows="3" required maxlength="2000" placeholder="브레이크·타이어 상태와 고객 증상 확인 결과"></textarea>${demoChoices('findings', DEMO_CHOICES.findings)}</label><button class="primary-button" type="submit">체크 결과 보내기</button></form>`;
     case 'before-photos':
       return `<form id="before-photos-form" class="stage-form"><h4>현장 확인 · 수리 전 사진</h4>${photoPicker('beforePhotos')}<small>사진 1은 필수이며 필요한 만큼 최대 5장까지 추가해 주세요.</small><button class="primary-button" type="submit">수리 전 사진 저장</button></form>`;
     case 'repair-plan':
-      return `<form id="plan-form" class="stage-form"><label>수리 예정 내용<textarea name="details" rows="3" maxlength="2000" required></textarea></label><div class="part-picker"><label for="part-search">부품 검색<input id="part-search" type="search" autocomplete="off" placeholder="예: 브레이크, 타이어, 충전기"></label><small>부품명의 일부만 입력한 뒤 목록에서 선택하세요.</small><div id="part-suggestions" class="part-suggestions" role="listbox" aria-label="검색된 부품"></div><div id="selected-parts" class="selected-parts" aria-live="polite"></div><input type="hidden" name="partsChat"></div><section class="travel-estimate" aria-live="polite"><div><span>자동 출장비</span><strong id="travel-fee-value">계산 중…</strong></div><p id="travel-estimate-status">본사와 실제 출동 주소의 도로 거리를 확인하고 있습니다.</p><input type="hidden" name="region"><input type="hidden" name="distanceKm"><input type="hidden" name="travelFee"></section><p id="quote-preview" role="status">부품을 선택하면 자동 출장비를 더해 최종 견적을 계산합니다.</p><button id="plan-submit" class="primary-button" type="submit" disabled>최종 견적 확인</button></form>`;
+      return `<form id="plan-form" class="stage-form"><label>수리 예정 내용<textarea name="details" rows="3" maxlength="2000" required></textarea>${demoChoices('details', DEMO_CHOICES.repairPlan)}</label><div class="part-picker"><label for="part-search">부품 검색<input id="part-search" type="search" autocomplete="off" placeholder="예: 브레이크, 타이어, 충전기"></label><small>부품명의 일부만 입력한 뒤 목록에서 선택하세요.</small><div id="part-suggestions" class="part-suggestions" role="listbox" aria-label="검색된 부품"></div><div id="selected-parts" class="selected-parts" aria-live="polite"></div><input type="hidden" name="partsChat"></div><section class="travel-estimate" aria-live="polite"><div><span>자동 출장비</span><strong id="travel-fee-value">계산 중…</strong></div><p id="travel-estimate-status">본사와 실제 출동 주소의 도로 거리를 확인하고 있습니다.</p><input type="hidden" name="region"><input type="hidden" name="distanceKm"><input type="hidden" name="travelFee"></section><p id="quote-preview" role="status">부품을 선택하면 자동 출장비를 더해 최종 견적을 계산합니다.</p><button id="plan-submit" class="primary-button" type="submit" disabled>최종 견적 확인</button></form>`;
     case 'customer-approval':
       return quoteCard(item) + signatureForm('approval', '고객에게 부품·가격·총액을 설명한 후 수리 진행 동의를 받아 주세요.', '표시된 수리 내용과 예상 금액에 동의합니다.');
     case 'repair-notes':
-      return `<form id="repair-notes-form" class="stage-form"><label>실제 수리 내용과 결과<textarea name="repairNotes" rows="5" maxlength="3000" required placeholder="교체한 부품, 실제 조치, 재시험 결과를 적어 주세요…"></textarea></label><button class="primary-button" type="submit">수리 내역 보내기</button></form>`;
+      return `<form id="repair-notes-form" class="stage-form"><label>실제 수리 내용과 결과<textarea name="repairNotes" rows="5" maxlength="3000" required placeholder="교체한 부품, 실제 조치, 재시험 결과를 적어 주세요…"></textarea>${demoChoices('repairNotes', DEMO_CHOICES.repairNotes)}</label><button class="primary-button" type="submit">수리 내역 보내기</button></form>`;
     case 'photos':
       return `<form id="photos-form" class="stage-form"><h4>수리 후 사진</h4>${photoPicker('afterPhotos')}<small>사진 1은 필수이며 수리 완료 상태를 최대 5장까지 추가해 주세요.</small><button class="primary-button" type="submit">수리 후 사진 저장</button></form>`;
     case 'final-verification':
@@ -399,6 +413,13 @@ $('#open-engineer-help').addEventListener('click', () => {
 $('#close-engineer-help').addEventListener('click', () => setEngineerHelp(false));
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
 $('#conversation').addEventListener('click', event => {
+  const demoButton=event.target.closest('[data-demo-target]');
+  if(demoButton){
+    const form=demoButton.closest('form');
+    const field=form?.elements.namedItem(demoButton.dataset.demoTarget);
+    if(field){field.value=demoButton.dataset.demoValue||'';field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));field.focus();}
+    return;
+  }
   const partButton=event.target.closest('[data-select-part]');if(partButton){addPartSelection(partButton.dataset.selectPart);return;}
   const removePart=event.target.closest('[data-remove-part]');if(removePart){removePart.closest('[data-selected-part]')?.remove();syncSelectedParts();return;}
   if(event.target.closest('.travel-retry')){loadTravelEstimate(current(),true);return;}
@@ -557,7 +578,7 @@ $('#conversation').addEventListener('submit', async event => {
 
 function erpForm(item) {
   if(item.stage!=='erp-pending') return item.erp ? `<div class="quote-card"><h4>ERP 확인 완료</h4><p>제품명: ${escapeHtml(item.erp.productName)} · 구입 시점: ${escapeHtml(item.erp.purchaseDate)}</p><p>과거 수리 이력: ${lines(item.erp.repairHistory)}</p><small>${escapeHtml(item.erp.confirmedBy)} · ${date(item.erp.confirmedAt)}</small></div>` : '';
-  return `<form id="erp-form" class="stage-form card"><h3>통화 종료 후 ERP 확인</h3><p>상담 원문은 잠겼습니다. ERP를 조회한 후 직접 입력해 주세요.</p><label>제품명<input name="productName" required maxlength="150"></label><label>구입 시점<input name="purchaseDate" required maxlength="80" placeholder="예: 2024년 3월 / 확인 불가 시 사유 입력"></label><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" rows="4" placeholder="수리 날짜·내용을 적어 주세요. 이력이 없으면 ‘없음’으로 입력합니다."></textarea></label><button class="primary-button" type="submit" ${sending?'disabled':''}>ERP 정보 저장 · 접수 전달</button></form>`;
+  return `<form id="erp-form" class="stage-form card"><h3>통화 종료 후 ERP 확인</h3><p>상담 원문은 잠겼습니다. ERP를 조회한 후 직접 입력해 주세요.</p><label>제품명<input name="productName" required maxlength="150">${demoChoices('productName', DEMO_CHOICES.productName)}</label><label>구입 시점<input name="purchaseDate" required maxlength="80" placeholder="예: 2024년 3월 / 확인 불가 시 사유 입력">${demoChoices('purchaseDate', DEMO_CHOICES.purchaseDate)}</label><label>과거 수리 이력<textarea name="repairHistory" required maxlength="4000" rows="4" placeholder="수리 날짜·내용을 적어 주세요. 이력이 없으면 ‘없음’으로 입력합니다."></textarea>${demoChoices('repairHistory', DEMO_CHOICES.repairHistory)}</label><button class="primary-button" type="submit" ${sending?'disabled':''}>ERP 정보 저장 · 접수 전달</button></form>`;
 }
 function privacyNotice() {
   return `<div class="privacy-notice"><h4>개인정보 처리 내역</h4><p>다음에 원활한 수리를 위해서 부탁드립니다.</p><p>고객 이름·등록 주소, 상담·ERP 확인 내역, 점검·수리 기록, 사진과 서명을 이번 수리 확인 및 다음 수리 지원에 사용합니다. 현재 시연 기록은 이 브라우저에 저장됩니다.</p><label class="consent-row"><input type="checkbox" name="privacyRead" required><span>개인정보 처리 내역을 안내받고 확인했습니다.</span></label></div>`;
