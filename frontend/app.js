@@ -308,7 +308,7 @@ function render(scrollPosition = 'bottom') {
   $('#page-title').textContent = state.role === 'manager' ? '팀장 대시보드' : item ? `${item.customerName} 상담` : '새 상담';
   $('#thread-id').textContent = item?.id || '새 접수';
   $('#thread-status').textContent = statusText(item);
-  $('#open-engineer-help').hidden = state.role !== 'engineer' || state.selectedEngineer !== '엔지니어 A';
+  $('#open-engineer-help').hidden = state.role !== 'engineer';
   $('#case-count').textContent = state.cases.length;
   $('#role-manager').classList.toggle('active',state.role==='manager');
   $('#role-manager').setAttribute('aria-pressed',String(state.role==='manager'));
@@ -371,8 +371,11 @@ $('#new-case').addEventListener('click', () => { state.activeId = null; state.ro
 $('#role-counselor').addEventListener('click', () => { state.role = 'counselor'; state.closeFormOpen = false; persist(); render(); });
 $('#role-engineer').addEventListener('click', () => { state.role = 'engineer'; state.closeFormOpen = false; persist(); render('top'); });
 $('#open-engineer-help').addEventListener('click', () => {
-  if (state.role === 'engineer' && state.selectedEngineer === '엔지니어 A') {
-    window.open('./engineer-help/', 'fieldnote-engineer-help', 'width=580,height=760,resizable=yes,scrollbars=yes');
+  if (state.role === 'engineer') {
+    const helpUrl = new URL('./engineer-help/', window.location.href);
+    helpUrl.searchParams.set('engineer', state.selectedEngineer || '엔지니어');
+    const engineerIndex = Math.max(0, state.staff.engineers.indexOf(state.selectedEngineer));
+    window.open(helpUrl.href, `fieldnote-engineer-help-${engineerIndex}`, 'width=580,height=760,resizable=yes,scrollbars=yes');
   }
 });
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
