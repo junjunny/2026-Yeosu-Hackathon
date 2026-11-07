@@ -228,6 +228,32 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(post.call_count, 1)
 
+    def test_engineer_help_uses_separate_chatbot_and_session(self):
+        health = httpx.Response(200, json={'status': 'healthy'})
+        sessions = [httpx.Response(201, json={'session_id': 'counselor-session'}), httpx.Response(201, json={'session_id': 'engineer-session'})]
+
+        class Stream:
+            status_code = 200
+            def iter_lines(self): return iter(['{"event":"assistant.delta","content":"답변"}', '{"event":"turn.completed"}'])
+
+        class Context:
+            def __enter__(self): return Stream()
+            def __exit__(self, *_args): return False
+
+        class Client:
+            def __init__(self, **_kwargs): pass
+            def stream(self, *_args, **_kwargs): return Context()
+            def close(self): pass
+
+        with patch.dict(os.environ, {'AGENTSTREAM_BASE_URL': 'https://agent.example/agentstream', 'AGENTSTREAM_CHATBOT_ID': 'counselor-id', 'AGENTSTREAM_API_KEY': 'server-only-key'}), patch.object(service.httpx, 'get', return_value=health), patch.object(service.httpx, 'post', side_effect=sessions) as post, patch.object(service.httpx, 'Client', Client):
+            with service.agent_session_lock: service.agent_sessions.clear()
+            client = self.client()
+            first = client.post('/api/agentstream/chat', json={'caseId':'shared', 'message':'상담'})
+            second = client.post('/api/agentstream/engineer-chat', json={'caseId':'shared', 'message':'브레이크'})
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        self.assertIn('/chatbots/counselor-id/sessions', post.call_args_list[0].args[0])
+        self.assertIn(f'/chatbots/{service.AGENTSTREAM_ENGINEER_CHATBOT_ID}/sessions', post.call_args_list[1].args[0])
+
     def test_agentstream_health_failure_is_not_reported_as_chat_answer(self):
         health = httpx.Response(200, json={'status': 'unhealthy', 'message': 'embedding unavailable'})
         with patch.dict(os.environ, {
