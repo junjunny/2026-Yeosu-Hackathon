@@ -4,6 +4,10 @@
 
 ## 실행
 
+현재 원격 호스트의 8501 배포는 세션과 독립된 runit 서비스로 실행합니다.
+상태 확인·재시작·호스트 복구 절차는 [서비스 운영 안내](ops/README.md)를 따릅니다.
+아래 명령은 로컬 개발용이며, 운영 중인 8501 서비스와 중복 실행하지 않습니다.
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r frontend/dispatch/requirements.txt && cp -n frontend/dispatch/.env.example frontend/dispatch/.env

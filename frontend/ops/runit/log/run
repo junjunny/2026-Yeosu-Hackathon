@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+exec /usr/bin/chpst -u ubuntu:ubuntu /usr/bin/svlogd -tt \
+  /data/Documents/Codex/.runtime/fieldnote/logs
