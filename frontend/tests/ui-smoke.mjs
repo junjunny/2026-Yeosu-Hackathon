@@ -36,6 +36,7 @@ const clickChoice=async(target,value)=>{const button=[...w.document.querySelecto
 const item=()=>w.testState.cases[0];
 await clickChoice('customerName','한준희');await clickChoice('registeredAddress','전남광주 나주시 금성관길 6-1');await clickChoice('dispatchAddress','전남광주 나주시 금성관길 6-1');await submit('#start-form');
 assert.equal(item().registeredAddress,'전남광주 나주시 금성관길 6-1');
+assert.equal(dashboard.seoulDay(item().receivedAt),dashboard.seoulDay(new Date()));assert.ok(Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',hourCycle:'h23'}).format(new Date(item().receivedAt)))<13);
 await clickChoice('text','딱딱 소리가 나고, 브레이크가 밀리는 것 같다.');await submit('#counselor-chat');assert.match(item().transcript.at(-1).text,/계기판|AgentStream 연결 실패/);
 await click('#open-close');assert.ok($('.insurance-field').hidden);set('incidentType','accident');assert.equal($('.insurance-field').hidden,false);assert.ok($('.insurance-enrollment').hidden);set('insuranceRepair','yes');assert.equal($('.insurance-enrollment').hidden,false);set('insuranceEnrolled','yes');
 for(const name of ['visitRequested','cannotDrive','selfCareWanted'])$(`[name="${name}"][value="yes"]`).checked=true;
