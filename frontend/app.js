@@ -433,12 +433,20 @@ $('#open-engineer-help').addEventListener('click', () => {
 });
 $('#close-engineer-help').addEventListener('click', () => setEngineerHelp(false));
 $('#case-list').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.activeId = button.dataset.caseId; state.closeFormOpen = false; persist(); render(); });
+function closeDemoChoices(except=null){document.querySelectorAll('.demo-choices.is-open').forEach(popup=>{if(popup!==except)popup.classList.remove('is-open');});}
+$('#conversation').addEventListener('focusin', event => {
+  const field=event.target.closest('input[name], textarea[name]');if(!field)return;
+  const form=field.closest('form');const popup=[...(form?.querySelectorAll('.demo-choices')||[])].find(item=>item.querySelector(`[data-demo-target="${CSS.escape(field.name)}"]`));
+  closeDemoChoices(popup);popup?.classList.add('is-open');
+});
+$('#conversation').addEventListener('keydown', event=>{if(event.key==='Escape')closeDemoChoices();});
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.demo-choices, input[name], textarea[name]'))closeDemoChoices();});
 $('#conversation').addEventListener('click', event => {
   const demoButton=event.target.closest('[data-demo-target]');
   if(demoButton){
     const form=demoButton.closest('form');
     const field=form?.elements.namedItem(demoButton.dataset.demoTarget);
-    if(field){field.value=demoButton.dataset.demoValue||'';field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));field.focus();}
+    if(field){field.value=demoButton.dataset.demoValue||'';field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));field.focus();demoButton.closest('.demo-choices')?.classList.remove('is-open');}
     return;
   }
   const partButton=event.target.closest('[data-select-part]');if(partButton){addPartSelection(partButton.dataset.selectPart);return;}
