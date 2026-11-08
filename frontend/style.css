@@ -226,3 +226,11 @@ input[type=file] { max-width: 100%; min-width: 0; }
 .report-download{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:20px;margin:16px 0;background:#f0f5ff;border:1px solid #d6e2f5;border-radius:14px;min-width:0}
 .report-download>div{flex:1 1 260px;min-width:0}.report-download h3,.report-download h4{margin:0 0 8px}.report-download p{margin:0;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}.report-download button{min-height:48px;white-space:normal;word-break:keep-all;max-width:100%}.report-status{flex-basis:100%;font-size:13px;color:#314b72}.report-status:empty{display:none}
 @media(max-width:600px){.report-download{padding:16px}.report-download button{width:100%}}
+
+.internal-remark{border-top:1px solid #dce3ed;margin-top:20px;padding-top:20px;min-width:0}
+.internal-remark label{font-size:14px;color:#263750}
+.internal-remark textarea{font-size:13px;min-height:110px}
+.internal-remark small{display:block;line-height:1.6;margin:8px 0 14px;color:#687791}
+.internal-remark .primary-button{min-height:44px}
+.remark-status{min-height:18px;margin:9px 0 0;color:#315d85;font-size:12px}
+@media(max-width:600px){.internal-remark .primary-button{width:100%}}

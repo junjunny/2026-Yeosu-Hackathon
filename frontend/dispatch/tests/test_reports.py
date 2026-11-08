@@ -59,6 +59,9 @@ class ReportTests(unittest.TestCase):
         workbook = load_workbook(io.BytesIO(response.content))
         sheet = workbook['누적 수리 이력']
         self.assertEqual(sheet.max_row, base + 1)
+        self.assertEqual(sheet.cell(1, 23).value, '최종 확인')
+        self.assertEqual(sheet.cell(1, 24).value, '비고')
+        self.assertIsNone(sheet.cell(sheet.max_row, 24).value)
         self.assertEqual(sheet.cell(sheet.max_row, 1).value, r['id'])
         self.assertEqual(sheet.cell(sheet.max_row, 18).value, 133000)
         self.assertEqual(sheet.cell(sheet.max_row, 15).data_type, 's')
@@ -73,12 +76,18 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(completed_records(self.store)), base - 1)
 
     def test_pdf_has_korean_costs_all_photos_and_both_signatures(self):
-        self.save(self.actual())
+        record = self.actual()
+        record['internalRemark'] = '사내 전용 비고: 차기 방문 시 점검'
+        self.save(record)
+        workbook = load_workbook(io.BytesIO(self.client.get('/api/reports/repairs.xlsx').content))
+        self.assertEqual(workbook['누적 수리 이력'].cell(workbook['누적 수리 이력'].max_row, 24).value, record['internalRemark'])
         response = self.client.get('/api/reports/repairs/REPORT-TEST-ONLY.pdf')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['content-type'], 'application/pdf')
         reader = PdfReader(io.BytesIO(response.content))
         text = '\n'.join(page.extract_text() for page in reader.pages)
+        self.assertNotIn('사내 전용 비고', text)
+        self.assertNotIn('차기 방문 시 점검', text)
         for expected in ['133,000원', '33,000원', '브레이크', '앞 타이어', '수리 전 사진 5', '수리 후 사진 5', '수리 진행 동의', '수리 이행 확인']:
             self.assertIn(expected, text)
         self.assertGreaterEqual(len(reader.pages), 6)
@@ -90,6 +99,22 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(self.client.get(f'/api/reports/repairs/{ident}.pdf').status_code, 404)
         for url in ['file:///etc/passwd', 'https://example.com/picture.png', 'data:image/svg+xml,<svg/>', './api/records/media/../../.env']:
             self.assertIsNone(image_uri(url, self.store))
+
+    def test_internal_remark_is_only_accepted_after_completion(self):
+        pending = self.actual('final-verification')
+        pending['internalRemark'] = '사내 비고'
+        response = self.client.post('/api/records/sync', json={'changes': [{'record': pending, 'baseRevision': 0}]})
+        self.assertEqual(response.status_code, 422)
+        completed = self.actual()
+        completed['internalRemark'] = '가' * 2001
+        response = self.client.post('/api/records/sync', json={'changes': [{'record': completed, 'baseRevision': 0}]})
+        self.assertEqual(response.status_code, 422)
+        completed['internalRemark'] = '=HYPERLINK("https://example.invalid")'
+        self.save(completed)
+        workbook = load_workbook(io.BytesIO(self.client.get('/api/reports/repairs.xlsx').content))
+        cell = workbook['누적 수리 이력'].cell(workbook['누적 수리 이력'].max_row, 24)
+        self.assertEqual(cell.value, completed['internalRemark'])
+        self.assertEqual(cell.data_type, 's')
 
 
 if __name__ == '__main__':

@@ -65,14 +65,14 @@ def excel_bytes(records):
     book = Workbook()
     history = book.active
     history.title = '누적 수리 이력'
-    history.append(['접수 ID', '자료 구분', '고객명', '제품명', '현장 주소', '상담사', '담당 기사', '접수 시각 (한국)', '현장 도착', '수리 동의', '최종 서명', '완료 시각', '현장 경과(분)', '점검 결과', '실제 수리 결과', '부품·공임 합계(원)', '출장비·기타(원)', '견적 총액(원)', '비용 기준', '수리 전 사진(장)', '수리 후 사진(장)', '수리 동의 확인', '최종 확인'])
+    history.append(['접수 ID', '자료 구분', '고객명', '제품명', '현장 주소', '상담사', '담당 기사', '접수 시각 (한국)', '현장 도착', '수리 동의', '최종 서명', '완료 시각', '현장 경과(분)', '점검 결과', '실제 수리 결과', '부품·공임 합계(원)', '출장비·기타(원)', '견적 총액(원)', '비용 기준', '수리 전 사진(장)', '수리 후 사진(장)', '수리 동의 확인', '최종 확인', '비고'])
     parts = book.create_sheet('사용 부품 상세')
     parts.append(['접수 ID', '고객명', '부품명', '수량', '단가·공임 포함(원)', '합계(원)'])
     for r in records:
         p = r.get('repairPlan') or {}
         approval, final = r.get('approvalSignature') or {}, r.get('finalSignature') or {}
         synthetic = r['id'].startswith('FARMINGBOY-')
-        history.append([r['id'], '합성 데모' if synthetic else '직접 접수', r.get('customerName'), (r.get('erp') or {}).get('productName', r.get('equipmentId')), r.get('dispatchAddress'), r.get('counselorName'), r.get('assignedEngineer'), stamp(r.get('receivedAt') or r.get('createdAt')), stamp(r.get('arrivedAt')), stamp(approval.get('signedAt')), stamp(final.get('signedAt')), stamp(r.get('completedAt')), elapsed(r), r.get('checklistFindings'), r.get('repairNotes'), *costs(r), '이전 견적: 출장비 확인 필요' if p.get('legacy') else '저장된 견적 · 수금 확인 아님' if p else '견적 기록 없음', len(r.get('beforePhotos') or []), len(r.get('afterPhotos') or []), '손글씨 서명' if approval.get('image') else '성명 확인' if approval else '기록 없음', '손글씨 서명' if final.get('image') else '성명 확인' if final else '기록 없음'])
+        history.append([r['id'], '합성 데모' if synthetic else '직접 접수', r.get('customerName'), (r.get('erp') or {}).get('productName', r.get('equipmentId')), r.get('dispatchAddress'), r.get('counselorName'), r.get('assignedEngineer'), stamp(r.get('receivedAt') or r.get('createdAt')), stamp(r.get('arrivedAt')), stamp(approval.get('signedAt')), stamp(final.get('signedAt')), stamp(r.get('completedAt')), elapsed(r), r.get('checklistFindings'), r.get('repairNotes'), *costs(r), '이전 견적: 출장비 확인 필요' if p.get('legacy') else '저장된 견적 · 수금 확인 아님' if p else '견적 기록 없음', len(r.get('beforePhotos') or []), len(r.get('afterPhotos') or []), '손글씨 서명' if approval.get('image') else '성명 확인' if approval else '기록 없음', '손글씨 서명' if final.get('image') else '성명 확인' if final else '기록 없음', r.get('internalRemark') or None])
         if not p:
             for col in (16, 17, 18):
                 history.cell(history.max_row, col).value = None
@@ -88,6 +88,7 @@ def excel_bytes(records):
         ['합성 자료', '기본 데모는 한국 날짜에 맞춰 최근 30일로 이동합니다. 직접 접수한 실제 기록은 날짜가 바뀌어도 유지됩니다.'],
         ['비용', '부품 단가는 공임을 포함합니다. 별도 공임을 중복 합산하지 않습니다. 견적은 입금·수금 확인서가 아닙니다.'],
         ['사진·서명', '원본은 서버 파일 저장소에 보관합니다. 고객별 PDF에서 저장된 사진·서명을 확인하세요. 엑셀에는 개수와 확인 방식만 표시합니다.'],
+        ['비고', '기사가 수리 완료 후 작성하는 사내 참고 정보입니다. 고객용 PDF에는 포함되지 않습니다.'],
     ]:
         info.append(row)
     for sheet in book:
@@ -113,6 +114,7 @@ def excel_bytes(records):
     for col in ('E', 'N', 'O'):
         history.column_dimensions[col].width = 48
     history.column_dimensions['A'].width = 43
+    history.column_dimensions['X'].width = 48
     parts.column_dimensions['A'].width = 43
     parts.column_dimensions['C'].width = 36
     info.column_dimensions['B'].width = 105

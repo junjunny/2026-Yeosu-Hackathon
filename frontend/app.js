@@ -315,7 +315,7 @@ function stageForm(item) {
     case 'final-verification':
       return `${photoGallery(item)}${signatureForm('verification', '고객에게 개인정보 처리 내역을 안내하고 요청한 수리 이행 여부를 확인해 주세요.', '요청하신 수리를 잘 이행하였음을 확인했습니다.')}`;
     case 'complete':
-      return `<div class="completion-card card"><div class="card-title"><span class="step-index done">✓</span><div><h3>현장 완료 보고</h3><p>${date(item.completedAt)} · 수리 동의 및 수리 이행 확인 서명 저장</p></div></div>${quoteCard(item)}<p><b>실제 수리</b> ${escapeHtml(item.repairNotes)}</p>${photoGallery(item)}<div class="signature-receipts">${signatureReceipt(item.approvalSignature, '수리 진행 동의')}${signatureReceipt(item.finalSignature, '수리 이행 확인')}</div><div class="report-download"><div><h4>고객용 수리 완료 안내서</h4><p>수리 내용·비용·사진·서명을 큰 글씨의 PDF로 받으세요. 출력해서 전달할 수 있습니다.</p></div><button type="button" class="primary-button" data-report="pdf" data-case-id="${escapeHtml(item.id)}">수리 완료 안내서 PDF</button><p class="report-status" role="status" aria-live="polite"></p></div></div>`;
+      return `<div class="completion-card card"><div class="card-title"><span class="step-index done">✓</span><div><h3>현장 완료 보고</h3><p>${date(item.completedAt)} · 수리 동의 및 수리 이행 확인 서명 저장</p></div></div>${quoteCard(item)}<p><b>실제 수리</b> ${escapeHtml(item.repairNotes)}</p>${photoGallery(item)}<div class="signature-receipts">${signatureReceipt(item.approvalSignature, '수리 진행 동의')}${signatureReceipt(item.finalSignature, '수리 이행 확인')}</div><div class="report-download"><div><h4>고객용 수리 완료 안내서</h4><p>수리 내용·비용·사진·서명을 큰 글씨의 PDF로 받으세요. 출력해서 전달할 수 있습니다.</p></div><button type="button" class="primary-button" data-report="pdf" data-case-id="${escapeHtml(item.id)}">수리 완료 안내서 PDF</button><p class="report-status" role="status" aria-live="polite"></p></div><form id="internal-remark-form" class="stage-form internal-remark"><label>비고 · 사내 참고용<textarea name="internalRemark" rows="4" maxlength="2000" placeholder="고객이나 장비에 관해 회사 내부에서 참고할 내용을 입력하세요.">${escapeHtml(item.internalRemark || '')}</textarea></label><small>고객용 수리 완료 안내서 PDF에는 포함되지 않습니다. 팀장용 누적 이력 엑셀의 마지막 열에서 확인할 수 있습니다.</small><button class="primary-button" type="submit">비고 저장</button><p class="remark-status" role="status" aria-live="polite"></p></form></div>`;
     default: return '<div class="waiting-box">이 상담은 출동 없이 원격 안내로 종료되었습니다.</div>';
   }
 }
@@ -571,6 +571,28 @@ $('#conversation').addEventListener('submit', async event => {
     if (persist()) render(); return;
   }
   if (!item) return;
+  if (form.id === 'internal-remark-form') {
+    if (state.role !== 'engineer' || item.stage !== 'complete') return;
+    const remark = String(data.get('internalRemark') || '').trim();
+    if (remark.length > 2000) return formError(form, '비고는 2,000자 이내로 입력해 주세요.', 'internalRemark');
+    if (!recordSync?.ready) return formError(form, '서버 연결을 확인한 뒤 저장해 주세요.', 'internalRemark');
+    const button = form.querySelector('button[type="submit"]');
+    const notice = form.querySelector('.remark-status');
+    button.disabled = true;
+    notice.textContent = '비고를 저장하고 있습니다…';
+    item.internalRemark = remark;
+    persist();
+    try {
+      await recordSync.ensureSaved();
+      formDirty = false;
+      notice.textContent = remark ? '사내 비고를 저장했습니다.' : '비고를 비워 두었습니다.';
+    } catch (error) {
+      notice.textContent = error.message || '비고를 저장하지 못했습니다. 다시 시도해 주세요.';
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+    return;
+  }
   if (form.id === 'counselor-chat') {
     if (sending || item.stage !== 'counseling') return;
     const text = String(data.get('text')).trim(); if (!text) return;

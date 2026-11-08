@@ -103,6 +103,9 @@ class RecordStore:
         record = json.loads(encode(raw))
         record.pop('_serverRevision', None)
         record.pop('_pendingServer', None)
+        remark = record.get('internalRemark')
+        if remark is not None and (not isinstance(remark, str) or len(remark) > 2000 or record.get('stage') != 'complete'):
+            raise HTTPException(422, '사내 비고는 수리 완료 후 2,000자 이내로 저장해 주세요.')
         day = record.get('demoDay', '') if record['id'].startswith('FARMINGBOY-') else ''
         if record['id'].startswith('FARMINGBOY-') and day != today():
             raise HTTPException(409, '데모 날짜가 바뀌었습니다. 새로고침해 주세요.')
