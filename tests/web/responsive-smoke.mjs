@@ -17,13 +17,13 @@ await page.route('**/api/dispatch/travel-estimate',r=>r.fulfill({json:{hqAddress
 await page.route('**/api/agentstream/**',r=>r.fulfill({status:503,json:{detail:'UI 검증용 응답'}}));
 try {
   await page.goto(base);
-  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('yeosu-fieldnote-chat-v2')||'{}').cases?.length>90);
-  const seed=await page.evaluate(()=>localStorage.getItem('yeosu-fieldnote-chat-v2'));
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('yeosu-fieldnote-demo-final-20261108')||'{}').cases?.length>90);
+  const seed=await page.evaluate(()=>localStorage.getItem('yeosu-fieldnote-demo-final-20261108'));
   async function scene(role,stage){
     await page.evaluate(({seed,role,stage})=>{
       const s=JSON.parse(seed);s.role=role;s.selectedEngineer='엔지니어 A';s.activeId=stage?'FARMINGBOY-CUS-094':null;
       if(stage){const c=s.cases.find(c=>c.id===s.activeId);c.stage=stage;if(stage==='counseling'){c.closedAt=null;c.transcript.push({role:'counselor',text:'딱딱 소리가 나고 브레이크가 밀리는 것 같습니다.',createdAt:new Date().toISOString()});}}
-      localStorage.setItem('yeosu-fieldnote-chat-v2',JSON.stringify(s));
+      localStorage.setItem('yeosu-fieldnote-demo-final-20261108',JSON.stringify(s));
     },{seed,role,stage});
     await page.reload();
     if(role==='manager'){

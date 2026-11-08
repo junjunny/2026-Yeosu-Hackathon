@@ -17,7 +17,7 @@ const html=await readFile(new URL('../../web/index.html',import.meta.url),'utf8'
 const dom=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const w=dom.window;
 Object.assign(w,services,workflow,routing,prices,access,dashboard,{makeDemoCases,technicianPerformance,defaultCatalog,catalogSource,structuredClone,AbortController});
 globalThis.localStorage=w.localStorage;globalThis.DOMParser=w.DOMParser;
-w.createRecordSync=()=>({ready:true,hasPending:false,async start(){},async ensureSaved(){},schedule(){},refresh(){}});w.localStorage.setItem('yeosu-fieldnote-chat-v2',JSON.stringify({cases:[],activeId:null,role:'counselor',routePlans:{}}));
+w.createRecordSync=()=>({ready:true,hasPending:false,async start(){},async ensureSaved(){},schedule(){},refresh(){}});w.localStorage.setItem('yeosu-fieldnote-demo-final-20261108',JSON.stringify({cases:[],activeId:null,role:'counselor',routePlans:{}}));
 w.CSS ||= {};w.CSS.escape ||= value=>String(value).replace(/[^a-zA-Z0-9_-]/g,character=>`\\${character}`);
 w.alert=message=>{throw new Error(message);};
 w.HTMLCanvasElement.prototype.getContext=()=>({scale(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},clearRect(){},drawImage(){}});
@@ -66,9 +66,9 @@ $('[name="consent"]').checked=true;set('typedName','시연 고객');await submit
 assert.equal($('[name="internalRemark"]').value,'');assert.ok($('#internal-remark-form').compareDocumentPosition($('[data-report="pdf"]')) & w.Node.DOCUMENT_POSITION_PRECEDING);
 w.testSetRecordSync({ready:true,async ensureSaved(){},schedule(){}});
 set('internalRemark','합성 검증용 내부 의견');await submit('#internal-remark-form');assert.equal(item().internalRemark,'합성 검증용 내부 의견');assert.match($('.remark-status').textContent,/저장했습니다/);
-assert.equal(JSON.parse(w.localStorage.getItem('yeosu-fieldnote-chat-v2')).cases[0].stage,'complete');assert.deepEqual(errors,[]);
+assert.equal(JSON.parse(w.localStorage.getItem('yeosu-fieldnote-demo-final-20261108')).cases[0].stage,'complete');assert.deepEqual(errors,[]);
 // Re-open saved state with the actual migration and rendering code.
-const saved=w.localStorage.getItem('yeosu-fieldnote-chat-v2');const restored=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const rw=restored.window;rw.localStorage.setItem('yeosu-fieldnote-chat-v2',saved);globalThis.localStorage=rw.localStorage;Object.assign(rw,services,workflow,routing,prices,access,dashboard,{makeDemoCases,technicianPerformance,defaultCatalog,catalogSource,structuredClone,AbortController});rw.createRecordSync=w.createRecordSync;rw.eval(source);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(rw.document.querySelectorAll('.photo-gallery img').length,4);assert.match(rw.document.querySelector('.completion-card').textContent,/수리 이행 확인/);assert.equal(rw.document.querySelector('[name="internalRemark"]').value,'합성 검증용 내부 의견');
+const saved=w.localStorage.getItem('yeosu-fieldnote-demo-final-20261108');const restored=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only'});const rw=restored.window;rw.localStorage.setItem('yeosu-fieldnote-demo-final-20261108',saved);globalThis.localStorage=rw.localStorage;Object.assign(rw,services,workflow,routing,prices,access,dashboard,{makeDemoCases,technicianPerformance,defaultCatalog,catalogSource,structuredClone,AbortController});rw.createRecordSync=w.createRecordSync;rw.eval(source);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(rw.document.querySelectorAll('.photo-gallery img').length,4);assert.match(rw.document.querySelector('.completion-card').textContent,/수리 이행 확인/);assert.equal(rw.document.querySelector('[name="internalRemark"]').value,'합성 검증용 내부 의견');
 console.log('PASS: 상담 → 보험 조건 → ERP 입력 전 종료 차단 → 통화 잠금 → 팀장 권한 차단 → 일괄 배정 → 기사 선택 → 필수 점검 → 수리 전 사진 2장 → 가격표 누락 차단 → 견적 → 동의 → 수리 후 사진 2장 → 개인정보 확인·최종 서명 → 저장 복원');
 const workbook=await readFile(new URL('./fixtures/synthetic-prices.xlsx',import.meta.url));
 const fixtureFile={name:'synthetic-prices.xlsx',size:workbook.length,arrayBuffer:async()=>workbook.buffer.slice(workbook.byteOffset,workbook.byteOffset+workbook.byteLength)};

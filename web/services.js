@@ -1,5 +1,5 @@
 import { followUpQuestions, customerChecklist } from './workflow.js';
-const STORAGE_KEY = 'yeosu-fieldnote-chat-v2';
+const STORAGE_KEY = 'yeosu-fieldnote-demo-final-20261108';
 
 export const referenceCases = [
   {
@@ -27,6 +27,8 @@ export const referenceCases = [
 
 export function loadState() {
   try {
+    // One-time rehearsal reset. New presentation records keep using the new key.
+    localStorage.removeItem('yeosu-fieldnote-chat-v2');
     const state = JSON.parse(localStorage.getItem(STORAGE_KEY));
     return state && Array.isArray(state.cases) ? state : { cases: [], activeId: null, role: 'counselor', closeFormOpen: false };
   } catch {

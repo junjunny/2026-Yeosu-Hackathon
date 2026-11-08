@@ -32,7 +32,7 @@ try{
  for(const item of targets){await p.locator(`[data-confirm-priority="${item.id}"]`).click();await ready();await p.locator(`[data-manager-approve="${item.id}"]`).click();await ready();}
  const approved=targets.map(r=>records.get(r.id));assert.ok(approved.every(r=>r.managerApprovedAt));const queued=approved.filter(r=>!r.assignedEngineer);assert.ok(queued.length>0);
  for(const item of queued){assert.match(await p.locator(`[data-manager-approve="${item.id}"]`).locator('xpath=ancestor::*[contains(@class,"manager-intake")][1]').textContent(),/최종 컨펌 완료.*배차 대기/);}
- const state=await p.evaluate(()=>JSON.parse(localStorage.getItem('yeosu-fieldnote-chat-v2')));assert.equal(state.cases.filter(r=>r.assignedEngineer==='엔지니어 A'&&!['complete','remote-closed'].includes(r.stage)).length,5);
+ const state=await p.evaluate(()=>JSON.parse(localStorage.getItem('yeosu-fieldnote-demo-final-20261108')));assert.equal(state.cases.filter(r=>r.assignedEngineer==='엔지니어 A'&&!['complete','remote-closed'].includes(r.stage)).length,5);
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
  assert.deepEqual(errors,[]);console.log('PASS: 6 manager approvals despite full engineer; visible waiting queue; 5-job assignment cap; mobile layout');
  console.log('No production records written; 18 intake records tested.');
