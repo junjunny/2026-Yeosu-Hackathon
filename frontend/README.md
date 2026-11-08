@@ -28,7 +28,7 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 5. Geocoding → OR-Tools → 기사별 Directions 5 1회 → 지도 표시 순서로 처리합니다.
 6. 기사는 체크리스트, 수리 전후 사진, 부품 견적, 수리 동의와 최종 서명을 기록합니다.
 
-배차 계산은 Haversine×1.3과 평균 40km/h를 사용합니다. 기사당 최대 5건이고 긴급 건에 더 높은 미배정 penalty를 적용합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다. 전문 파트가 없거나 주소를 확인하지 못한 건은 별도 목록에 표시합니다.
+배차 계산은 Haversine×1.3과 평균 40km/h를 사용합니다. 기사당 최대 5건이고 긴급 건에 더 높은 미배정 penalty를 적용합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다. 주소를 확인하지 못하거나 배차 한도로 배정되지 않은 건은 별도 목록에 표시합니다.
 
 ## 데이터와 보안
 
@@ -48,7 +48,7 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 
 제공된 키를 코드, README, 테스트, 커밋에 넣지 마세요. 외부 API가 실패하면 지도는 `대체 경로` 점선으로 계속 동작합니다.
 
-팀장 데모 비밀번호는 `1234`입니다. 오늘 접수 고객은 오늘 수리 예약과 분리되어 있으며, 현재 데모는 오늘 예약 12명 중 7명 완료·5명 예정으로 시드됩니다.
+팀장 데모 비밀번호는 `1234`입니다. 오늘 접수 고객은 오늘 수리 예약과 분리되어 있으며, 현재 데모는 오늘 예약 12명 중 5명 완료·7명 예정으로 시드됩니다.
 
 ## 검증
 
@@ -67,8 +67,8 @@ FIELDNOTE_QA_PACKAGE=/path/to/qa/package.json node --experimental-default-type=m
 
 ```bash
 python3 -m unittest discover -s frontend/dispatch/tests -v
-node frontend/tests/workflow.test.mjs
-node --check frontend/app.js && node --check frontend/services.js
+node --experimental-default-type=module frontend/tests/workflow.test.mjs
+node --experimental-default-type=module --check frontend/app.js && node --experimental-default-type=module --check frontend/services.js
 ```
 
 AgentStream은 서버에서 X-API-Key 인증으로 health 확인 → 세션 생성 → 메시지 스트리밍을 호출합니다. 실제 연결 설정은 `dispatch/.env`에만 둡니다.

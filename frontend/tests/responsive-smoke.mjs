@@ -69,6 +69,7 @@ try {
     await page.locator('#open-close').click();await page.locator('#close-form').waitFor();await fits(`ERP close ${width}`);
     for(const stage of ['awaiting-arrival','checklist','before-photos','repair-plan','customer-approval','repair-notes','photos','final-verification','complete']){
       await scene('engineer',stage);await fits(`${stage} ${width}`);
+      if(stage==='complete' && width<=700)assert.ok(await page.locator('[name=internalRemark]').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)>=16),'mobile internal remark stays readable without input zoom');
       if(stage==='before-photos'||stage==='photos')assert.equal(await page.locator('input[type=file]').count(),5);
       if(stage==='checklist'){
         await page.locator('[name=findings]').fill('입력 중인 점검 결과');
@@ -79,7 +80,7 @@ try {
         if(width<=900){
           // A reduced viewport approximates the space left by the mobile keyboard.
           await page.setViewportSize({width,height:500});
-          const composer=await help.locator('#help-form').boundingBox();assert.ok(composer.y+composer.height<=500,`Help composer ${width}`);
+          await page.waitForTimeout(100);const composer=await help.locator('#help-form').boundingBox();assert.ok(composer.y+composer.height<=500,`Help composer ${width}: ${JSON.stringify(composer)}`);
           await page.setViewportSize({width,height:900});
         }
         await page.locator('#close-engineer-help').click();

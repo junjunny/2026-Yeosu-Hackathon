@@ -925,4 +925,14 @@ async function bootstrap() {
     $('#conversation')?.prepend(notice);
   }
 }
+// Mobile browsers resize the visual viewport when their keyboard opens.
+function updateVisibleViewport() {
+  const viewport = window.visualViewport;
+  document.documentElement.style.setProperty('--visible-height', `${viewport?.height || window.innerHeight}px`);
+  document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop || 0}px`);
+}
+window.visualViewport?.addEventListener('resize', updateVisibleViewport);
+window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
+window.addEventListener('resize', updateVisibleViewport);
+updateVisibleViewport();
 bootstrap();

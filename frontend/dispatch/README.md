@@ -1,6 +1,6 @@
 # 농기계 AS 기사 배차·동선 데모
 
-FastAPI가 CSV 접수를 Geocoding하고, 전문 파트가 맞는 기사에게 OR-Tools CVRP로 배정한 뒤 기사별로 Directions 5를 한 번 호출합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다.
+FastAPI가 CSV 접수를 Geocoding하고, 동일한 통합 역량의 기사에게 OR-Tools CVRP로 배정한 뒤 기사별로 Directions 5를 한 번 호출합니다. 모든 기사는 본점에서 출발하며 마지막 방문지에서 경로가 끝납니다.
 
 ## 실행 3줄
 
@@ -18,8 +18,8 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 
 - `data/as_requests.csv`: `접수ID, 접수일, 주소, 모델, 증상(고객 말), 필요파트, 긴급도`
 - `data/technicians.csv`: `기사ID, 이름, 전문파트`
-- 전문파트를 여러 개 지정할 때는 `구동|조향`처럼 `|`로 구분합니다.
-- 샘플은 나주 인근 합성 접수 20건과 기사 4명입니다. `유압` 접수는 맞는 기사가 없어 미배정되는 사례입니다.
+- 전문파트 열은 기존 형식 호환용이며 배차 제약에 사용하지 않습니다.
+- 기본 입력은 합성 방문 예약 12건과 엔지니어 A/B/C 3명입니다. 팀장 화면은 내일 방문 대상의 배차 계획을 별도로 구성합니다.
 
 ## 단계별 API
 
@@ -38,7 +38,7 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 
 ```bash
 python3 -m unittest discover -s frontend/dispatch/tests -v
-node --check frontend/app.js && node --check frontend/services.js
+node --experimental-default-type=module --check frontend/app.js && node --experimental-default-type=module --check frontend/services.js
 ```
 
 `.env`, Geocoding SQLite 캐시, Python 소스, CSV는 FastAPI의 공개 파일 경로에서 제공하지 않습니다.
