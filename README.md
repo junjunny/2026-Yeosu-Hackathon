@@ -26,10 +26,11 @@ Python 3.12 기준, 저장소 루트에서 실행합니다. PDF 생성에는 Ubu
 sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-noto-cjk
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r frontend/dispatch/requirements.txt
-cp -n frontend/dispatch/.env.example frontend/dispatch/.env
+pip install -r server/requirements.txt
+mkdir -p frontend/dispatch
+cp -n config/.env.example frontend/dispatch/.env
 # 외부 API 키는 frontend/dispatch/.env에만 입력
-uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
+uvicorn server.app:app --host 0.0.0.0 --port 8501
 ```
 
 브라우저에서 `http://localhost:8501/`을 엽니다. API 키가 없으면 챗봇 연결 오류가 표시되고 지도는 대체 경로를 사용합니다.
@@ -39,10 +40,36 @@ uvicorn frontend.dispatch.app:app --host 0.0.0.0 --port 8501
 - 다른 환경에서는 `.env`의 `FIELDNOTE_DATA_DIR`로 쓰기 가능한 데이터 폴더를 지정합니다.
 - 서버 사용자 인증·권한 분리는 아직 구현하지 않은 공개 합성 데이터 데모입니다.
 
-[상세 실행·검증 안내](frontend/README.md) · [8501 서비스 운영·복구](frontend/ops/README.md)
+[상세 실행·검증 안내](docs/development.md) · [8501 서비스 운영·복구](ops/README.md)
 
-## 구조
+## 저장소 구조
 
-- `frontend/`: HTML·CSS·Vanilla JavaScript 화면
-- `frontend/dispatch/`: 현재 배포에 사용하는 FastAPI, 기록 저장, 배차, 보고서 API
-- `backend/`: 팀 공동 작업 영역
+```text
+web/            브라우저 화면, 스타일, JavaScript, 합성 데모와 이미지
+server/         FastAPI API, AgentStream 연동, OR-Tools, SQLite, PDF·Excel
+knowledge/      상담·정비 지식 문서와 가상 엔지니어 사례
+config/         비밀값이 없는 환경 설정 예제
+tests/         웹·서버 자동 검증과 합성 테스트 자료
+ops/            8501 서비스 실행·복구
+docs/          개발 안내, 발표 참고, 제출 점검, 과거 인계
+```
+
+[구조와 데이터 흐름](docs/architecture.md) · [심사위원용 확인 안내](docs/judging-guide.md) · [검증 기록](docs/submission-check.md)
+
+기존 `frontend/dispatch/.env`와 지도 캐시는 실행 호스트에만 남겨 설정을 유지합니다. GitHub의 실행 코드는 `web/`와 `server/`가 기준입니다. 기존 `backend/`의 지식 문서는 내용 손실 없이 `knowledge/`로 옮겼습니다.
+
+## 테스트
+
+```bash
+pip install -r tests/server/requirements.txt
+python -m unittest discover -s tests/server -q
+# Node.js 22 이상
+npm ci
+npx playwright install chromium
+npm test
+npm run test:ui
+# 8501 서비스가 실행된 상태에서 화면 점검
+npm run test:responsive
+```
+
+공유 기록 E2E는 합성 접수를 실제로 생성하므로 [개발 안내](docs/development.md)의 명시적 실행·정리 절차를 따릅니다.

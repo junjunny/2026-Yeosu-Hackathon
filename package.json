@@ -1,0 +1,17 @@
+{
+  "name": "fieldnote-hackathon",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/web/*.test.mjs",
+    "test:ui": "node tests/web/ui-smoke.mjs && node tests/web/dispatch-ui-smoke.mjs",
+    "test:responsive": "node tests/web/responsive-smoke.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "22.1.0",
+    "playwright": "1.65.0"
+  }
+}

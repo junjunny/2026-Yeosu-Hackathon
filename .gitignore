@@ -1,0 +1,16 @@
+# Secrets and local/runtime data (never publish)
+.env
+.env.*
+!.env.example
+.private/
+.runtime/
+*.sqlite
+*.sqlite3
+*.sqlite*-wal
+*.sqlite*-shm
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+# Retained local configuration path; source moved to web/ and server/
+/frontend/
